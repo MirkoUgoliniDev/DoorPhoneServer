@@ -7,592 +7,518 @@
 
 ---
 
-## 1. Architettura generale
+## 1. Visione generale
+
+Il sistema aggiunge un **ESP32-S3** collegato via USB al Raspberry Pi. L'ESP32-S3 gestisce in autonomia:
+
+- Lettura interrupt-driven dei pulsanti (P1, P2, P3, On/Off)
+- Controllo output digitali (relè portone, LED heartbeat, alimentazione tablet)
+- Controllo PWM della ventola di raffreddamento
+- Lettura e autenticazione crittografica DESFire EV3 (tessere accesso)
+
+Il Raspberry Pi riceve **eventi semplici** via USB e li gestisce senza conoscere nulla del protocollo crittografico o dei dettagli hardware:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Raspberry Pi 4                            │
-│                                                              │
-│  doorphoneserver (Go)                                        │
-│  ├── gpio.go          ← GPIO fisici Pi (invariato)           │
-│  ├── gpio_usb.go      ← bridge seriale ESP32-S3 (nuovo)      │
-│  └── smartcard.go     ← validazione accesso post-auth (nuovo)│
-│                            │ USB CDC ACM /dev/gpio-esp32     │
-└────────────────────────────┼─────────────────────────────────┘
-                             │  protocollo testuale linea/linea
-┌────────────────────────────┼─────────────────────────────────┐
-│          ESP32-S3          │                                  │
-│                                                               │
-│  ┌──────────┐ ┌─────────┐ ┌──────────────────────────────┐  │
-│  │ GPIO ISR │ │LEDC PWM │ │  DESFire EV3 Engine           │  │
-│  │ inputs   │ │ fan     │ │  ├── ISO 14443-4 (PN532)      │  │
-│  └────┬─────┘ └─────────┘ │  ├── 3-pass AES mutual auth   │  │
-│       │                   │  ├── Session key derivation    │  │
-│       │    FreeRTOS        │  ├── File read + decrypt       │  │
-│       └──────────────────►│  └── CMAC/TMAC verify          │  │
-│                            └──────────────┬───────────────┘  │
-│                                           │ EVT CARD_OK/DENIED│
-└───────────────────────────────────────────┼──────────────────┘
-                         │            │     │
-                    Pulsanti      Ventola  PN532
-                    P1/P2/P3      MOSFET   (ISO14443-4)
-                    Relè portone
+ESP32-S3  ──USB──►  Pi riceve:
+                     EVT p1 0       ← pulsante P1 premuto
+                     EVT p2 1       ← pulsante P2 rilasciato
+                     UID-OK         ← tessera DESFire autenticata
+                     UID-KO         ← tessera rifiutata
 ```
+
+I GPIO fisici del Pi restano invariati e operativi — il sistema USB opera in **parallelo** durante la fase di sviluppo e debug.
 
 ---
 
-## 2. Perché DESFire EV3 (e non UID semplice)
+## 2. Stack tecnologico
 
-Un sistema basato sul solo UID della tessera è **vulnerabile per design**:
-
-| Attacco | UID semplice | DESFire EV3 |
-|---------|-------------|-------------|
-| Clonazione tessera (copiatrice ~20€) | ✗ Triviale | ✓ Impossibile (chiavi nel secure element) |
-| Replay attack | ✗ Sì | ✓ No (TMAC rotante, ogni transazione è unica) |
-| Relay attack (estendi range NFC) | ✗ Sì | ✓ No (Proximity Check EV3) |
-| Brute-force chiave | N/A | ✓ No (lockout dopo N tentativi falliti) |
-| Lettura passiva a distanza | ✗ Sì | ✓ No (dati cifrati in aria) |
-
-**DESFire EV3** (NXP MIFARE DESFire EV3) è lo standard de facto per controllo accessi professionale:
-- Autenticazione mutua a 3 passi con **AES-128** (o AES-256 in EV3)
-- **Transaction MAC (TMAC)**: ogni operazione ha un MAC univoco, i replay sono impossibili
-- **Proximity Check**: il chip misura il tempo di risposta RF per rilevare relay attack
-- **Secure Messaging**: tutti i dati in aria cifrati con session key derivata
-- Common Criteria **EAL5+** certificato
-- ISO/IEC 14443-4 (livello trasporto) + ISO 7816-4 (APDU)
+| Layer | Tecnologia | Motivo |
+|-------|-----------|--------|
+| Firmware ESP32-S3 | **TinyGo** | Go su microcontrollore — stesso linguaggio, driver PN532 già pronto |
+| Comunicazione USB | **USB CDC ACM** | ESP32-S3 appare come `/dev/ttyACM0` su Linux — nessun driver |
+| Simlink stabile | **udev rule** | `/dev/gpio-esp32` — indipendente dall'ordine di boot |
+| Libreria seriale Pi | **go.bug.st/serial** | Cross-platform, attivamente mantenuta, zero dipendenze C |
+| Driver NFC | **tinygo-org/drivers pn532** | Driver già scritto e testato per TinyGo |
+| Crittografia DESFire | **crypto/aes TinyGo** | AES hardware ESP32-S3 accessibile da TinyGo |
 
 ---
 
-## 3. Hardware
+## 3. Architettura software lato Pi
 
-### 3.1 ESP32-S3
-
-| Feature | Valore |
-|---------|--------|
-| USB | OTG nativo CDC ACM (no driver Linux) |
-| AES accelerator | Hardware AES-128/256 (fondamentale per DESFire) |
-| Flash encryption | Protegge le chiavi AES memorizzate in NVS |
-| Secure Boot V2 | Impedisce firmware non firmato |
-| GPIO | 45 pin, PWM hardware su tutti |
-| Devboard | ESP32-S3-DevKitC-1 (USB-C nativo) |
-
-L'**acceleratore AES hardware** è il motivo per cui l'ESP32-S3 è adatto: l'autenticazione DESFire richiede 2–4 operazioni AES per transazione, completabili in <1ms.
-
-### 3.2 Modulo NFC — PN532
-
-Il PN532 gestisce solo il livello RF (ISO 14443-4). La crittografia DESFire viene eseguita sull'ESP32-S3.
-
-| Feature | Valore |
-|---------|--------|
-| Standard RF | ISO 14443-A/B (DESFire usa 14443-A) |
-| Livello trasporto | ISO 14443-4 (T=CL, blocchi I/R/S) |
-| APDU forwarding | `InDataExchange` — il PN532 trasmette APDU grezzi alla carta |
-| Interfaccia verso ESP32-S3 | SPI (più robusto di I2C per sequenze APDU lunghe) |
-| Range | 3–7 cm (tessere standard) |
-| Costo | ~5–12€ |
-
-> **Nota**: il PN532 NON esegue la crittografia DESFire. Funziona come "antenna intelligente": riceve APDU dall'ESP32-S3, li trasmette alla tessera, restituisce la risposta. Tutta la logica crittografica è nell'ESP32-S3.
-
-### 3.3 Tessere DESFire EV3
-
-Le tessere devono essere **personalizzate** (programmate) prima dell'uso:
-- Creazione di una **Application** con AID scelto (es. `0xA5C301`)
-- Impostazione di **Master Key** (AES-128, 16 byte) e **Read Key**
-- Creazione di un **Data File** (es. file 0x01, 16 byte, accesso con Read Key) contenente l'ID utente
-- Ogni tessera avrà le stesse chiavi applicazione ma UID hardware diverso
-
-La personalizzazione richiede un tool separato (vedi Appendice D).
-
-### 3.4 Mappa GPIO ESP32-S3
-
-| Funzione | Dir. FW | GPIO | Note |
-|----------|---------|------|------|
-| Pulsante P1 | INPUT / ISR | 4 | Pull-up, active-low, ANYEDGE |
-| Pulsante P2 | INPUT / ISR | 5 | Pull-up, active-low, ANYEDGE |
-| Pulsante P3 | INPUT / ISR | 6 | Pull-up, active-low, ANYEDGE |
-| On/Off | INPUT / ISR | 7 | Pull-up, active-low, ANYEDGE |
-| LED Heartbeat | OUTPUT | 15 | 220Ω → LED |
-| Relè portone | OUTPUT | 16 | Transistor NPN / optoisolatore |
-| Power tablet | OUTPUT | 17 | Transistor NPN |
-| LED power | OUTPUT | 18 | 220Ω → LED |
-| Ventola PWM | OUTPUT/PWM | 8 | MOSFET N-ch, 25kHz |
-| PN532 MOSI (SPI) | SPI | 11 | |
-| PN532 MISO (SPI) | SPI | 13 | |
-| PN532 SCK (SPI) | SPI | 12 | |
-| PN532 SS/CS | OUTPUT | 10 | Active-low |
-| PN532 IRQ | INPUT / ISR | 9 | Interrupt card-present |
-| LED accesso verde | OUTPUT | 14 | Autorizzato |
-| LED accesso rosso | OUTPUT | 21 | Negato |
-
----
-
-## 4. Protocollo DESFire EV3 — flusso autenticazione
-
-### 4.1 Stack protocolli
+### 3.1 Schema generale
 
 ```
-doorphoneserver (Go)
-    │
-    │  USB CDC ACM (linee testo)
-    │
-ESP32-S3  ←── gestisce tutto il livello crittografico
-    │
-    │  PN532 SPI   →  APDU ISO 14443-4
-    │
-Tessera DESFire EV3
+/dev/gpio-esp32  (USB CDC ACM, 115200 baud)
+        │
+        │  righe di testo terminate da \n
+        ▼
+┌───────────────────────────────────────────┐
+│            usb_bridge.go                  │
+│                                           │
+│  - Apre la porta seriale                  │
+│  - Riconnessione automatica               │
+│  - Legge righe in loop                    │
+│  - Parsa il tipo di evento                │
+│  - Dispatcha sui canali Go                │
+│  - Espone Send() per inviare comandi      │
+│  - Invia PING ogni 5s (watchdog)          │
+└──────────────┬────────────────────────────┘
+               │
+       ┌───────┴────────┐
+       │                │
+       ▼                ▼
+chan GPIOEvent    chan CardEvent
+       │                │
+       ▼                ▼
+┌─────────────┐  ┌──────────────┐
+│ gpio_usb.go │  │ smartcard.go │
+│             │  │              │
+│ - Riceve    │  │ - Riceve     │
+│   EVT px N  │  │   UID-OK/KO  │
+│ - Chiama    │  │ - Valida con │
+│   cmdRing   │  │   smartcards │
+│   Piano()   │  │   .json      │
+│ - Espone    │  │ - Apre porta │
+│   SetPin()  │  │   se OK      │
+│   SetPWM()  │  │ - Log        │
+└─────────────┘  └──────────────┘
 ```
 
-### 4.2 Sequenza autenticazione AES (3 passi)
+### 3.2 `usb_bridge.go` — layer comune
+
+È il cuore dell'integrazione. Ha tre responsabilità:
+
+**a) Gestione connessione seriale con riconnessione automatica**
+
+La porta USB può sparire e riapparire (reboot ESP32-S3, stacco cavo). Il bridge gestisce questo in modo trasparente: quando la porta chiude, aspetta 10 secondi e riprova. Il resto dell'applicazione non si accorge di nulla.
+
+**b) Dispatch eventi sui canali**
+
+Legge una riga alla volta dal seriale e la instrada sul canale corretto:
 
 ```
-ESP32-S3                              DESFire EV3
-    │                                      │
-    │── APDU: SelectApplication(AID) ─────►│
-    │◄─ SW 9000 (OK) ──────────────────────│
-    │                                      │
-    │── APDU: AuthenticateAES(KeyNo=1) ───►│
-    │◄─ RndB_enc (16 byte AES cifrati) ────│  ← sfida dalla tessera
-    │                                      │
-    │  AES_decrypt(AppReadKey, RndB_enc)   │  ← ESP32-S3 decifra
-    │  Genera RndA (16 byte random)        │
-    │  token = AES_encrypt(AppReadKey,     │
-    │           RndA || rotate_left(RndB)) │
-    │                                      │
-    │── APDU: token (32 byte) ────────────►│
-    │◄─ AES_encrypt(AppReadKey,            │  ← tessera conferma
-    │    rotate_left(RndA)) ───────────────│
-    │                                      │
-    │  Verifica RndA' → AUTENTICAZIONE OK  │
-    │  session_key = KDF(RndA, RndB)       │  ← session key per questa transazione
-    │                                      │
-    │── APDU: ReadData(FileNo=1,           │
-    │         offset=0, length=16) ───────►│
-    │◄─ AES_encrypt(session_key, data)     │  ← dati cifrati con session key
-    │                                      │
-    │  AES_decrypt(session_key, data)      │
-    │  Verifica CMAC/TMAC                  │  ← replay protection
-    │  Estrai user_id dai dati             │
-    │                                      │
-    │── USB: EVT CARD_OK <user_id> <uid>  ─────────────► Pi
+riga "EVT p1 0"   →  GPIOEvent{Pin:"p1", Value:0}  →  chan GPIOEvent
+riga "EVT p2 1"   →  GPIOEvent{Pin:"p2", Value:1}  →  chan GPIOEvent
+riga "UID-OK"     →  CardEvent{OK:true}             →  chan CardEvent
+riga "UID-KO"     →  CardEvent{OK:false}            →  chan CardEvent
+riga "PONG"       →  aggiorna timestamp keepalive
+riga "ACK ..."    →  aggiorna stato interno output
 ```
 
-### 4.3 Gestione fallimenti
+**c) Invio comandi verso ESP32-S3**
 
-| Evento | Risposta ESP32-S3 |
-|--------|-------------------|
-| Carta non DESFire EV3 | `EVT CARD_DENIED WRONG_TYPE` |
-| AID non trovato sulla carta | `EVT CARD_DENIED NO_APP` |
-| Autenticazione fallita (chiave errata) | `EVT CARD_DENIED AUTH_FAIL` |
-| TMAC non valido (replay/manomissione) | `EVT CARD_DENIED TMAC_FAIL` |
-| Carta rimossa durante auth | `EVT CARD_DENIED CARD_REMOVED` |
-| Carta bloccata (troppi tentativi) | `EVT CARD_DENIED CARD_LOCKED` |
-| Errore PN532 / RF | `EVT CARD_DENIED RF_ERROR` |
-
----
-
-## 5. Protocollo USB (aggiornato)
-
-### 5.1 Pi → ESP32-S3
+Espone un metodo `Send(msg string)` che scrive sulla porta seriale attraverso un canale bufferizzato (evita race condition tra goroutine che scrivono contemporaneamente).
 
 ```
-SET <pin> <on|off|pulse>\n
-PWM <pin> <0-100>\n
-GET <pin>\n
-PING\n
+gpio_usb.go chiama:   bridge.Send("SET heartbeat on\n")
+smartcard.go chiama:  bridge.Send("SET unlockdoor pulse\n")
 ```
 
-### 5.2 ESP32-S3 → Pi
-
-```
-ACK <pin> <valore>\n
-VAL <pin> <valore>\n
-EVT <pin> <0|1>\n                          — cambio stato GPIO input
-EVT CARD_OK <user_id_hex> <uid_hex>\n      — auth DESFire completata OK
-EVT CARD_DENIED <reason>\n                 — auth fallita o tipo errato
-EVT CARD_REMOVED\n                         — tessera rimossa
-PONG\n
-ERR <codice> <msg>\n
-```
-
-`user_id_hex` = contenuto del Data File della tessera (16 byte hex), interpretato dal Pi.
-
-### 5.3 Watchdog
-
-Se nessun `PING` in 10 secondi:
-- `unlockdoor` → OFF
-- `heartbeat` → OFF
-- `fan` → PWM 50%
-- Auth in corso → annullata, `EVT CARD_DENIED WATCHDOG`
-
----
-
-## 6. Firmware ESP32-S3
-
-### 6.1 Task FreeRTOS
-
-```
-app_main
- ├── usb_cdc_init()        ← TinyUSB CDC ACM
- ├── gpio_init()           ← ISR su tutti gli input
- ├── pwm_init()            ← LEDC 25kHz
- ├── spi_init()            ← PN532 SPI
- ├── nfc_pn532_init()      ← wake-up, SAMConfiguration
- ├── nvs_load_keys()       ← carica AES keys da NVS cifrato
- │
- ├── task: usb_rx_task     prio 5  ← legge comandi da Pi
- ├── task: gpio_out_task   prio 4  ← esegue SET/PWM dalla coda
- ├── task: gpio_isr_task   prio 4  ← processa eventi ISR input
- ├── task: nfc_task        prio 3  ← polling tessera + auth DESFire
- └── task: watchdog_task   prio 6  ← safe_state() se PING assente
-```
-
-### 6.2 GPIO interrupt-driven
-
-```c
-static void IRAM_ATTR gpio_isr_handler(void *arg) {
-    gpio_event_t evt = {
-        .pin   = (uint32_t)arg,
-        .level = gpio_get_level((uint32_t)arg),
-    };
-    xQueueSendFromISR(gpio_evt_queue, &evt, NULL);
-}
-
-// gpio_isr_task: debounce 5ms in software dopo ISR
-void gpio_isr_task(void *arg) {
-    gpio_event_t evt;
-    for (;;) {
-        if (xQueueReceive(gpio_evt_queue, &evt, portMAX_DELAY)) {
-            vTaskDelay(pdMS_TO_TICKS(5));
-            if (gpio_get_level(evt.pin) == evt.level) {  // confermato
-                char msg[32];
-                snprintf(msg, sizeof(msg), "EVT %s %d\n",
-                         pin_name(evt.pin), evt.level);
-                usb_cdc_write(msg);
-            }
-        }
-    }
-}
-```
-
-### 6.3 PWM ventola (LEDC)
-
-```c
-void pwm_fan_set(uint8_t percent) {
-    // LEDC_TIMER_10_BIT → range 0–1023
-    uint32_t duty = ((uint32_t)percent * 1023) / 100;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-}
-// Frequenza: 25kHz — inaudibile, compatibile con ventole PWM 4-pin
-```
-
-### 6.4 DESFire EV3 — autenticazione AES in firmware
-
-```c
-// Struttura configurazione applicazione (da NVS)
-typedef struct {
-    uint8_t aid[3];          // Application ID, es. {0xA5, 0xC3, 0x01}
-    uint8_t key_no;          // Numero chiave per auth (es. 1)
-    uint8_t app_key[16];     // AES-128 application read key
-    uint8_t file_no;         // Numero file dati (es. 0x01)
-    uint8_t file_len;        // Lunghezza dati utente (es. 16)
-} desfire_app_config_t;
-
-esp_err_t desfire_authenticate_and_read(pn532_t *dev,
-                                         desfire_app_config_t *cfg,
-                                         uint8_t *out_user_id,
-                                         uint8_t *out_uid,
-                                         uint8_t *out_uid_len)
-{
-    uint8_t apdu[64], resp[64];
-    int resp_len;
-
-    // 1. Select Application
-    apdu[0]=0x90; apdu[1]=0x5A; apdu[2]=0x00; apdu[3]=0x00;
-    apdu[4]=0x03;
-    memcpy(apdu+5, cfg->aid, 3);
-    apdu[8]=0x00;
-    if (!pn532_in_data_exchange(dev, apdu, 9, resp, &resp_len))
-        return ESP_FAIL;
-    if (resp[resp_len-2] != 0x91 || resp[resp_len-1] != 0x00)
-        return ESP_ERR_NOT_FOUND;   // AID non trovato
-
-    // 2. AuthenticateAES → ricevi RndB cifrato
-    apdu[0]=0x90; apdu[1]=0xAA; apdu[2]=0x00; apdu[3]=0x00;
-    apdu[4]=0x01; apdu[5]=cfg->key_no; apdu[6]=0x00;
-    if (!pn532_in_data_exchange(dev, apdu, 7, resp, &resp_len))
-        return ESP_FAIL;
-    // resp contiene RndB_enc (16 byte) + 0x91 0xAF
-
-    // 3. Decifra RndB con AES hardware
-    uint8_t rnd_b[16], rnd_a[16], token[32];
-    esp_aes_context aes_ctx;
-    esp_aes_init(&aes_ctx);
-    esp_aes_setkey(&aes_ctx, cfg->app_key, 128);
-    esp_aes_crypt_ecb(&aes_ctx, ESP_AES_DECRYPT, resp, rnd_b);
-
-    // 4. Genera RndA random, costruisci token
-    esp_fill_random(rnd_a, 16);
-    uint8_t rnd_b_rot[16];
-    rotate_left(rnd_b, rnd_b_rot, 16);          // RndB ruotato di 1 byte a sinistra
-    memcpy(token, rnd_a, 16);
-    memcpy(token+16, rnd_b_rot, 16);
-    // Cifra in CBC con IV=0
-    uint8_t iv[16] = {0};
-    esp_aes_setkey(&aes_ctx, cfg->app_key, 128);
-    esp_aes_crypt_cbc(&aes_ctx, ESP_AES_ENCRYPT, 32, iv, token, token);
-
-    // 5. Invia token, ricevi conferma RndA'
-    apdu[0]=0x90; apdu[1]=0xAF; apdu[2]=0x00; apdu[3]=0x00;
-    apdu[4]=0x20;
-    memcpy(apdu+5, token, 32);
-    apdu[37]=0x00;
-    if (!pn532_in_data_exchange(dev, apdu, 38, resp, &resp_len))
-        return ESP_FAIL;
-
-    // 6. Verifica RndA' (risposta della tessera)
-    uint8_t rnd_a_prime[16];
-    esp_aes_crypt_ecb(&aes_ctx, ESP_AES_DECRYPT, resp, rnd_a_prime);
-    uint8_t rnd_a_rot[16];
-    rotate_left(rnd_a, rnd_a_rot, 16);
-    if (memcmp(rnd_a_prime, rnd_a_rot, 16) != 0) {
-        esp_aes_free(&aes_ctx);
-        return ESP_ERR_INVALID_MAC;  // AUTH_FAIL
-    }
-
-    // 7. Deriva session key: primi 4 byte RndA + primi 4 RndB + ultimi 4 RndA + ultimi 4 RndB
-    uint8_t session_key[16];
-    memcpy(session_key,    rnd_a,   4);
-    memcpy(session_key+4,  rnd_b,   4);
-    memcpy(session_key+8,  rnd_a+12,4);
-    memcpy(session_key+12, rnd_b+12,4);
-
-    // 8. ReadData con session key + verifica CMAC
-    // (dettagli omessi per brevità — segue standard AN10609 NXP)
-    esp_err_t ret = desfire_read_file_verified(dev, &aes_ctx,
-                                               session_key, cfg->file_no,
-                                               cfg->file_len, out_user_id);
-    esp_aes_free(&aes_ctx);
-    return ret;
-}
-```
-
-### 6.5 nfc_task — orchestrazione
-
-```c
-void nfc_task(void *arg) {
-    uint8_t uid[7], uid_len;
-    uint8_t user_id[16];
-
-    for (;;) {
-        // Attendi IRQ dal PN532 (card present) — interrupt-driven
-        xSemaphoreTake(nfc_irq_sem, portMAX_DELAY);
-
-        if (!pn532_read_passive_target_id(dev, &uid, &uid_len, 100))
-            continue;
-
-        // Verifica che sia DESFire (UID 7 byte = DESFire/Ultralight)
-        if (uid_len != 7) {
-            usb_cdc_write("EVT CARD_DENIED WRONG_TYPE\n");
-            continue;
-        }
-
-        esp_err_t result = desfire_authenticate_and_read(
-            dev, &app_cfg, user_id, uid, &uid_len);
-
-        char msg[80];
-        if (result == ESP_OK) {
-            // Converti user_id e uid in hex
-            char uid_hex[15]={0}, user_hex[33]={0};
-            bytes_to_hex(uid, uid_len, uid_hex);
-            bytes_to_hex(user_id, 16, user_hex);
-            snprintf(msg, sizeof(msg),
-                     "EVT CARD_OK %s %s\n", user_hex, uid_hex);
-        } else {
-            const char *reason = desfire_err_to_str(result);
-            snprintf(msg, sizeof(msg),
-                     "EVT CARD_DENIED %s\n", reason);
-        }
-        usb_cdc_write(msg);
-
-        // Attendi rimozione tessera
-        while (pn532_read_passive_target_id(dev, &uid, &uid_len, 50))
-            vTaskDelay(pdMS_TO_TICKS(100));
-        usb_cdc_write("EVT CARD_REMOVED\n");
-    }
-}
-```
-
-### 6.6 Gestione chiavi — NVS con flash encryption
-
-Le chiavi AES non sono mai in chiaro nel codice sorgente. Vengono scritte nell'NVS durante la fase di provisioning (una tantum):
-
-```c
-// Provisioning (eseguito una sola volta via tool seriale o OTA)
-nvs_handle_t nvs;
-nvs_open("desfire_keys", NVS_READWRITE, &nvs);
-nvs_set_blob(nvs, "app_key", app_key_bytes, 16);
-nvs_set_blob(nvs, "aid",     aid_bytes,     3);
-nvs_commit(nvs);
-nvs_close(nvs);
-```
-
-Con **Flash Encryption** abilitato (ESP32-S3 efuse), l'NVS è cifrato a riposo. Le chiavi sono illeggibili anche con accesso fisico al chip (JTAG disabilitato via efuse in produzione).
-
----
-
-## 7. Lato Pi — Go
-
-### 7.1 File nuovi
-
-```
-gpio_usb.go      — gestione porta seriale, loop lettura eventi
-smartcard.go     — validazione post-auth DESFire, log accessi
-```
-
-### 7.2 smartcard.go — logica validazione
-
-Quando il Pi riceve `EVT CARD_OK <user_id_hex> <uid_hex>`:
+**Struttura dati:**
 
 ```go
-func (b *DoorPhoneServer) handleCardOK(userIDHex, uidHex string) {
-    users := loadSmartcards()          // legge preferences/smartcards.json
-    user, found := users[userIDHex]
-
-    if !found || !user.Enabled {
-        log.Printf("[SMARTCARD] accesso negato: UID=%s userID=%s", uidHex, userIDHex)
-        b.sendUSB("SET access_led red\n")
-        // Pushover notify opzionale
-        return
-    }
-
-    log.Printf("[SMARTCARD] accesso OK: %s (UID=%s)", user.Name, uidHex)
-    b.sendUSB("SET access_led green\n")
-    GPIOOutPin("unlockdoor", "pulse")     // apre il portone (gpio.go invariato)
-    logAccess(userIDHex, uidHex, user.Name, true)
+type USBBridge struct {
+    port    serial.Port
+    sendCh  chan string       // comandi in uscita verso ESP32-S3
+    GpioEvt chan GPIOEvent    // eventi GPIO in ingresso
+    CardEvt chan CardEvent    // eventi smartcard in ingresso
 }
 
-func (b *DoorPhoneServer) handleCardDenied(reason string) {
-    log.Printf("[SMARTCARD] accesso negato dal firmware: %s", reason)
-    b.sendUSB("SET access_led red\n")
-    logAccess("", "", "", false)
+type GPIOEvent struct {
+    Pin   string  // "p1", "p2", "p3", "on_off"
+    Value int     // 0 = premuto (active-low), 1 = rilasciato
+}
+
+type CardEvent struct {
+    OK     bool    // true = UID-OK, false = UID-KO
 }
 ```
 
-### 7.3 `preferences/smartcards.json`
+### 3.3 `gpio_usb.go` — gestione GPIO
 
-La chiave del dizionario è il **user_id_hex** letto dal Data File della tessera (non l'UID hardware, che è immodificabile ma non è un segreto).
+Consuma gli eventi dal canale `GpioEvt` e gestisce i comandi di output verso l'ESP32-S3.
 
-```json
-{
-  "4D617269 6F526F73 73690000 00000001": {
-    "name": "Mario Rossi",
-    "floors": ["P1", "P2", "P3"],
-    "enabled": true,
-    "note": "Proprietario appartamento 3"
-  },
-  "416E6E61 56657264 69000000 00000002": {
-    "name": "Anna Verdi",
-    "floors": ["P2"],
-    "enabled": true,
-    "note": "Affittuario piano 2"
-  }
-}
+**Ricezione eventi (input):**
+
+Quando arriva un `GPIOEvent` con `Value == 0` (fronte discendente, pulsante premuto in active-low), chiama la stessa funzione già usata dai GPIO fisici del Pi:
+
+```
+GPIOEvent{Pin:"p1", Value:0}  →  b.cmdRingPiano("P1")
+GPIOEvent{Pin:"p2", Value:0}  →  b.cmdRingPiano("P2")
+GPIOEvent{Pin:"p3", Value:0}  →  b.cmdRingPiano("P3")
+GPIOEvent{Pin:"on_off", Value:0}  →  b.handleOnOff()
 ```
 
-> La chiave nel JSON è il contenuto del Data File — stabilito al momento della personalizzazione della tessera. Non deve essere l'UID hardware (quello è solo un seriale, non un segreto).
+In modalità debug: l'evento viene solo loggato, non eseguito — per non duplicare le azioni con il GPIO fisico già attivo.
 
-### 7.4 Log accessi — `preferences/access_log.jsonl`
+**Invio comandi (output):**
+
+Espone funzioni che il resto dell'applicazione usa per controllare gli output dell'ESP32-S3:
+
+```go
+func (g *GPIOUsb) SetPin(name string, state string)   // "heartbeat","on"
+func (g *GPIOUsb) SetPWM(name string, duty int)       // "fan", 75
+func (g *GPIOUsb) Pulse(name string)                  // "unlockdoor"
+```
+
+Internamente chiamano `bridge.Send("SET heartbeat on\n")` ecc.
+
+**Sincronizzazione con gpio.go:**
+
+In modalità debug, `gpio_usb.go` e `gpio.go` coesistono. Entrambi ricevono e loggano gli eventi, ma solo `gpio.go` esegue le azioni. Quando si passa in produzione, basta disabilitare `gpio.go` e rimuovere il flag debug.
+
+### 3.4 `smartcard.go` — gestione accesso tessere
+
+Consuma gli eventi dal canale `CardEvt`.
+
+**Flusso su `UID-OK`:**
+
+```
+CardEvent{OK: true}
+        │
+        ▼
+Log: "tessera accettata dall'ESP32-S3"
+        │
+        ▼
+bridge.Send("SET unlockdoor pulse\n")   ← apri portone via ESP32-S3
+        │
+        ▼
+GPIOOutPin("unlockdoor", "pulse")       ← apri portone via GPIO fisico Pi
+        │                                  (in produzione: solo uno dei due)
+        ▼
+Log accesso su preferences/access_log.jsonl
+```
+
+**Flusso su `UID-KO`:**
+
+```
+CardEvent{OK: false}
+        │
+        ▼
+Log: "tessera rifiutata dall'ESP32-S3"
+        │
+        ▼
+bridge.Send("SET led_red on\n")   ← LED rosso sull'ESP32-S3
+        │
+        ▼
+Log accesso negato su preferences/access_log.jsonl
+```
+
+**Nota importante:** `smartcard.go` **non fa nessuna validazione crittografica** — quella è già stata fatta dall'ESP32-S3. Il Pi si fida del risultato e gestisce solo le conseguenze applicative (apri porta, logga, notifica).
+
+**Log accessi (`preferences/access_log.jsonl`):**
+
+Ogni accesso viene registrato in formato JSONL (una riga JSON per evento):
 
 ```jsonl
-{"ts":"2026-05-16T10:23:11Z","user":"Mario Rossi","uid":"04A3F211B2","result":"OK","action":"unlockdoor"}
-{"ts":"2026-05-16T10:45:02Z","user":"","uid":"04CC221133","result":"DENIED","reason":"AUTH_FAIL"}
+{"ts":"2026-05-16T10:23:11Z","result":"OK","action":"unlockdoor"}
+{"ts":"2026-05-16T10:45:02Z","result":"KO","reason":"AUTH_FAIL"}
 ```
 
 ---
 
-## 8. Sicurezza — analisi
+## 4. Protocollo USB
 
-| Layer | Meccanismo | Protezione |
-|-------|-----------|------------|
-| RF (aria) | AES-128 session key (cambio ad ogni transazione) | Sniffing inutile |
-| Tessera | Mutual authentication + TMAC | Clonazione impossibile, replay impossibile |
-| Relay attack | Proximity Check EV3 | Estensione range NFC bloccata |
-| Chiavi in ESP32-S3 | NVS + Flash Encryption + efuse | Estrazione fisica bloccata |
-| Firmware | Secure Boot V2 | Solo firmware firmato eseguito |
-| Protocollo USB | Testo in chiaro (locale, fisico) | Accettabile: il canale USB è locale |
-| Chiavi nel repo | MAI — solo in NVS hardware | Nessun rischio leakage su git |
+### 4.1 Formato
 
-**Punto debole residuo**: il canale USB tra Pi e ESP32-S3 trasmette `EVT CARD_OK <user_id>` in chiaro. Poiché è un bus fisico locale (non di rete), il rischio è accettabile. Se richiesto, si può aggiungere un HMAC sul messaggio USB firmato con una shared secret Pi↔ESP32-S3.
+Testo ASCII, una riga per messaggio, terminata da `\n`. Semplice da leggere con `bufio.Scanner` in Go e con la UART in TinyGo. Leggibile a occhio durante il debug con qualsiasi terminale seriale.
 
----
+### 4.2 ESP32-S3 → Pi
 
-## 9. Stima fattibilità
+```
+EVT <pin> <0|1>\n          cambio stato GPIO input
+UID-OK\n                   tessera DESFire EV3 autenticata
+UID-KO\n                   tessera rifiutata (qualsiasi motivo)
+PONG\n                     risposta al PING
+ACK <pin> <valore>\n       conferma esecuzione comando SET/PWM
+```
 
-### Complessità: MEDIA-ALTA
+### 4.3 Pi → ESP32-S3
 
-| Componente | Difficoltà | Note |
-|------------|------------|------|
-| Firmware GPIO ISR + PWM | Media | Standard ESP-IDF |
-| Firmware PN532 SPI | Media | Driver disponibile in esp-idf-lib |
-| **Firmware DESFire EV3 AES auth** | **Alta** | Implementazione manuale protocollo NXP AN10609 |
-| Firmware NVS + flash encryption | Media | Documentato in ESP-IDF Security Guide |
-| Go gpio_usb.go + smartcard.go | Bassa-Media | Seriale + parsing semplice |
-| Personalizzazione tessere | Media | Tool Python su PC con PN532/ACR122U |
+```
+SET <pin> <on|off|pulse>\n   controlla output digitale
+PWM <pin> <0-100>\n          imposta duty cycle ventola
+GET <pin>\n                  leggi stato pin
+PING\n                       keepalive (ogni 5s)
+```
 
-### Stima ore
+### 4.4 Watchdog
 
-| Attività | Ore |
-|----------|-----|
-| Firmware base (USB CDC, GPIO ISR, PWM) | 4–6 h |
-| Driver PN532 SPI + lettura ISO14443-4 | 3–5 h |
-| **DESFire EV3: SelectApp + 3-pass AES auth** | **8–14 h** |
-| DESFire: ReadFile + CMAC/TMAC verify | 4–6 h |
-| NVS key storage + provisioning tool | 3–4 h |
-| Flash Encryption + Secure Boot setup | 2–4 h |
-| Go: gpio_usb.go + smartcard.go | 4–6 h |
-| Tool personalizzazione tessere (Python) | 3–5 h |
-| Test integrazione end-to-end | 4–6 h |
-| **Totale** | **35–56 h** |
-
-Il range è ampio perché il fattore dominante è l'implementazione del protocollo DESFire: esiste codice di riferimento (libfreefare, AN10609) ma il porting su ESP32-S3 richiede attenzione ai dettagli (endianness, padding CBC, rotazioni).
-
-### Rischi principali
-
-| Rischio | Probabilità | Mitigazione |
-|---------|-------------|-------------|
-| Implementazione AES-CBC con errori subtili | Alta | Testare con vettori di test NXP AN10609 prima di testare su carta reale |
-| PN532 instabile su SPI ad alta velocità | Media | Clock SPI a 1MHz (invece di max 5MHz) nella fase di debug |
-| Versione tessere non EV3 (es. EV1/EV2) | Media | EV1/EV2 usano lo stesso protocollo AES — compatibile con minime differenze |
-| Chiavi perse / NVS corrotto | Bassa | Backup chiavi in vault separato; procedura di re-provisioning |
-| Flash encryption irrecuperabile | Bassa | Non abilitare in produzione finché non testato a fondo in debug |
+Se l'ESP32-S3 non riceve `PING` entro 10 secondi:
+- `unlockdoor` → OFF (sicurezza: portone rimane chiuso)
+- `heartbeat` → OFF
+- `fan` → PWM 50% (ventilazione minima)
+- Qualsiasi autenticazione in corso → annullata, invia `UID-KO`
 
 ---
 
-## 10. Roadmap
+## 5. Firmware ESP32-S3 (TinyGo)
 
-### Fase 1 — Debug parallelo (GPIO-OVER-USB)
-- [ ] Firmware: USB CDC + GPIO ISR + PWM fan funzionanti
-- [ ] Firmware: PN532 SPI, lettura UID grezzo (senza DESFire)
-- [ ] Go: `gpio_usb.go` — connessione seriale, log eventi GPIO
-- [ ] Test: pulsanti, ventola PWM, relè pulse
+### 5.1 Perché TinyGo
 
-### Fase 2 — DESFire EV3
-- [ ] Implementa `desfire_authenticate_and_read()` con test vector NXP
-- [ ] Tool Python di personalizzazione tessere (PC + ACR122U/PN532)
-- [ ] Personalizza 2–3 tessere di test
-- [ ] Test autenticazione completa + TMAC
-- [ ] Go: `smartcard.go` con `smartcards.json`
+- Stesso linguaggio Go — un solo codebase, un solo programmatore
+- Driver PN532 già pronto in `tinygo-org/drivers`
+- `crypto/aes` disponibile con accesso all'acceleratore hardware ESP32-S3
+- Goroutine e canali disponibili (con le limitazioni del runtime TinyGo)
+- Nessun C, nessun ESP-IDF, nessun FreeRTOS da gestire manualmente
 
-### Fase 3 — Hardening
-- [ ] NVS provisioning + Flash Encryption
-- [ ] Secure Boot V2
-- [ ] Log accessi su Pi
-- [ ] Test Proximity Check (anti-relay)
+### 5.2 Struttura firmware
 
-### Fase 4 — Migrazione produzione (opzionale)
-- [ ] `gpio_usb.go` diventa backend primario
-- [ ] Rimozione `gpio.go` (post-validazione)
+```
+firmware/
+├── main.go              ← entry point, init periferiche, avvia goroutine
+├── gpio_handler.go      ← interrupt GPIO input, debounce, invio EVT
+├── gpio_output.go       ← esegue SET/PWM dalla coda comandi
+├── pwm_fan.go           ← controllo LEDC 25kHz duty 0-100%
+├── pn532_handler.go     ← loop NFC, usa driver tinygo-org/drivers/pn532
+├── desfire_auth.go      ← 3-pass AES mutual auth + TMAC verify DESFire EV3
+├── usb_handler.go       ← legge comandi USB, scrive eventi, watchdog
+└── key_store.go         ← carica chiavi AES da flash (NVS cifrato)
+```
+
+### 5.3 Goroutine e canali (TinyGo)
+
+```go
+// main.go — schema goroutine
+func main() {
+    initUSB()
+    initGPIO()
+    initPWM()
+    initNFC()
+    loadKeys()
+
+    cmdCh := make(chan Command, 16)    // comandi USB → output GPIO
+    evtCh := make(chan string,  16)    // eventi → USB out
+
+    go usbRxLoop(cmdCh)               // legge comandi dal Pi
+    go usbTxLoop(evtCh)               // invia eventi al Pi
+    go gpioInputLoop(evtCh)           // interrupt GPIO → EVT
+    go gpioOutputLoop(cmdCh)          // SET/PWM
+    go nfcLoop(evtCh)                 // PN532 + DESFire → UID-OK/KO
+    go watchdogLoop()                 // safe state se PING assente
+    select {}                         // blocca main forever
+}
+```
+
+### 5.4 GPIO interrupt-driven
+
+In TinyGo su ESP32-S3, i pin supportano interrupt su fronte:
+
+```go
+// gpio_handler.go
+func initGPIOInputs() {
+    pins := []machine.Pin{PIN_P1, PIN_P2, PIN_P3, PIN_ON_OFF}
+    for _, p := range pins {
+        p.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+        p.SetInterrupt(machine.PinFalling|machine.PinRising, func(p machine.Pin) {
+            // ISR: solo notifica, niente logica
+            gpioIsrCh <- p
+        })
+    }
+}
+
+func gpioInputLoop(evtCh chan<- string) {
+    prev := map[machine.Pin]bool{}
+    for pin := range gpioIsrCh {
+        time.Sleep(5 * time.Millisecond)    // debounce
+        val := pin.Get()
+        if val == prev[pin] { continue }     // glitch, ignora
+        prev[pin] = val
+        v := 0
+        if val { v = 1 }
+        evtCh <- fmt.Sprintf("EVT %s %d\n", pinName(pin), v)
+    }
+}
+```
+
+### 5.5 PWM ventola (LEDC)
+
+```go
+// pwm_fan.go
+var fanPWM machine.PWM
+
+func initPWM() {
+    fanPWM = machine.PWM0
+    fanPWM.Configure(machine.PWMConfig{Period: 40000}) // 25kHz
+    fanPWM.Set(machine.PWM0.Channel(PIN_FAN), 0)
+}
+
+func setFanDuty(percent int) {
+    if percent < 0  { percent = 0  }
+    if percent > 100 { percent = 100 }
+    top := fanPWM.Top()
+    fanPWM.Set(machine.PWM0.Channel(PIN_FAN), uint32(top)*uint32(percent)/100)
+}
+```
+
+### 5.6 NFC DESFire EV3
+
+```go
+// pn532_handler.go
+func nfcLoop(evtCh chan<- string) {
+    nfc := pn532.New(machine.SPI0, PIN_NFC_CS, PIN_NFC_IRQ)
+    nfc.Configure()
+
+    for {
+        // Attendi interrupt IRQ dal PN532 (card present)
+        <-nfcIrqCh
+
+        uid, err := nfc.ReadPassiveTarget(pn532.ISO14443A, 100*time.Millisecond)
+        if err != nil { continue }
+
+        // Solo DESFire: UID 7 byte
+        if len(uid) != 7 {
+            evtCh <- "UID-KO\n"
+            continue
+        }
+
+        // Autenticazione DESFire EV3 completa (desfire_auth.go)
+        err = desfireAuthenticate(nfc, uid)
+        if err != nil {
+            evtCh <- "UID-KO\n"
+        } else {
+            evtCh <- "UID-OK\n"
+        }
+
+        // Attendi rimozione tessera
+        waitCardRemoved(nfc)
+    }
+}
+```
+
+### 5.7 DESFire EV3 — autenticazione AES 3 passi
+
+L'ESP32-S3 esegue l'intera sequenza crittografica. Il Pi non vede nulla di questo.
+
+```
+1. SelectApplication(AID)
+        │
+2. AuthenticateAES(KeyNo)  →  tessera risponde con RndB cifrato
+        │
+3. ESP32-S3:
+   - AES_decrypt(AppKey, RndB_enc)  →  RndB
+   - Genera RndA random
+   - token = AES_CBC_encrypt(AppKey, RndA || rotate(RndB))
+   - Invia token alla tessera
+        │
+4. Tessera risponde con AES_encrypt(AppKey, rotate(RndA))
+        │
+5. ESP32-S3 verifica RndA'  →  AUTENTICAZIONE MUTUA OK
+        │
+6. Deriva SessionKey = KDF(RndA, RndB)
+        │
+7. ReadFile(encrypted) + verifica CMAC/TMAC
+        │
+8. evtCh <- "UID-OK\n"   (oppure "UID-KO\n" su qualsiasi errore)
+```
+
+Le chiavi AES non lasciano mai l'ESP32-S3. Sono caricate dall'NVS cifrato all'avvio.
+
+---
+
+## 6. Mappa GPIO ESP32-S3
+
+| Funzione | Direzione | GPIO | Circuito esterno |
+|----------|-----------|------|------------------|
+| Pulsante P1 | INPUT ISR | 4 | Pull-up interno, active-low |
+| Pulsante P2 | INPUT ISR | 5 | Pull-up interno, active-low |
+| Pulsante P3 | INPUT ISR | 6 | Pull-up interno, active-low |
+| On/Off | INPUT ISR | 7 | Pull-up interno, active-low |
+| LED Heartbeat | OUTPUT | 15 | 220Ω → LED |
+| Relè portone | OUTPUT | 16 | BC547 NPN + 1N4007 |
+| Power tablet | OUTPUT | 17 | BC547 NPN |
+| LED power | OUTPUT | 18 | 220Ω → LED |
+| Ventola PWM | OUTPUT PWM | 8 | IRLZ44N MOSFET |
+| PN532 MOSI | SPI | 11 | |
+| PN532 MISO | SPI | 13 | |
+| PN532 SCK | SPI | 12 | |
+| PN532 CS | OUTPUT | 10 | Active-low |
+| PN532 IRQ | INPUT ISR | 9 | Interrupt card-present |
+| LED accesso OK | OUTPUT | 14 | 220Ω → LED verde |
+| LED accesso KO | OUTPUT | 21 | 220Ω → LED rosso |
+
+---
+
+## 7. Struttura file Go lato Pi
+
+```
+/home/doorphoneserver/
+├── gpio.go              ← GPIO fisici Pi (invariato, resta attivo)
+├── usb_bridge.go        ← NUOVO: seriale + dispatch canali
+├── gpio_usb.go          ← NUOVO: consumer GPIOEvent + comandi output
+└── smartcard.go         ← NUOVO: consumer CardEvent + log accessi
+```
+
+### Dipendenza da aggiungere
+
+```bash
+go get go.bug.st/serial@latest
+```
+
+Unica dipendenza nuova. Zero librerie NFC, zero librerie crypto sul Pi.
+
+### Integrazione nell'applicazione
+
+In `client.go` (o dove viene inizializzata l'app), aggiungere:
+
+```go
+bridge := NewUSBBridge(ctx)
+go NewGPIOUsb(bridge, server).Run(ctx)    // debug mode: solo log
+go NewSmartcard(bridge, server).Run(ctx)  // apre portone su UID-OK
+```
+
+---
+
+## 8. Personalizzazione tessere DESFire EV3
+
+Le tessere devono essere programmate una tantum con:
+- Application ID (AID) — stesso configurato nel firmware ESP32-S3
+- Application Key (AES-128) — stessa chiave nell'NVS dell'ESP32-S3
+- Data File (opzionale) — può contenere metadati (nome utente, piano, ecc.)
+
+Tool di personalizzazione: script Python su PC con lettore ACR122U o PN532 su USB.
+Dettagli in Appendice B.
+
+---
+
+## 9. Sicurezza chiavi
+
+| Dove | Come | Protezione |
+|------|------|-----------|
+| ESP32-S3 | NVS cifrato (Flash Encryption efuse) | Illeggibile anche con accesso fisico al chip |
+| Tool personalizzazione | File locale sul PC di amministrazione | Fuori dal repo git, mai committato |
+| Canale USB Pi↔ESP32-S3 | Testo in chiaro per ora | Accettabile: link fisico locale. HMAC aggiungibile in futuro |
+
+---
+
+## 10. Roadmap implementazione
+
+### Fase 1 — Firmware TinyGo base
+- [ ] Setup progetto TinyGo per ESP32-S3
+- [ ] USB CDC funzionante (PING/PONG)
+- [ ] GPIO interrupt-driven: EVT p1/p2/p3
+- [ ] PWM ventola: comando PWM fan
+- [ ] Relè portone: SET unlockdoor pulse
+
+### Fase 2 — Librerie Go lato Pi
+- [ ] `usb_bridge.go`: seriale + dispatch canali
+- [ ] `gpio_usb.go`: consumer GPIOEvent (modalità debug — solo log)
+- [ ] `smartcard.go`: consumer CardEvent (apre portone su UID-OK)
+- [ ] Regola udev `/dev/gpio-esp32`
+- [ ] Test integrazione Fase 1 + Fase 2
+
+### Fase 3 — DESFire EV3
+- [ ] Driver PN532 SPI in TinyGo (da tinygo-org/drivers)
+- [ ] `desfire_auth.go`: SelectApp + 3-pass AES + TMAC
+- [ ] NVS key storage + tool provisioning tessere
+- [ ] Test con tessere reali
+- [ ] UID-OK → portone apre end-to-end
+
+### Fase 4 — Hardening (opzionale)
+- [ ] Flash Encryption + Secure Boot ESP32-S3
+- [ ] HMAC sul canale USB (anti-replay)
+- [ ] Log accessi strutturato
+- [ ] Migrazione produzione: `gpio_usb.go` diventa backend primario
 
 ---
 
@@ -604,59 +530,41 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
     SYMLINK+="gpio-esp32", MODE="0660", GROUP="dialout"
 ```
 
-## Appendice B — Dipendenze Go
+Ricaricare: `sudo udevadm control --reload-rules && sudo udevadm trigger`
 
-```bash
-go get go.bug.st/serial    # porta seriale
+## Appendice B — Tool personalizzazione tessere (Python, PC)
+
+```python
+# pip install nfcpy
+# Hardware: ACR122U collegato al PC
+
+import nfc
+
+AID     = bytes([0xA5, 0xC3, 0x01])          # stesso AID del firmware
+APP_KEY = bytes.fromhex("CAMBIA_CON_CHIAVE_REALE_32HEX")
+
+def personalize(tag):
+    app = nfc.tag.tt4.Application(tag, AID)
+    app.select()
+    app.authenticate(key_no=0, key=b'\x00'*16)   # master key default (prima volta)
+    app.change_key(key_no=1, new_key=APP_KEY)
+    print(f"OK: UID={tag.identifier.hex().upper()}")
+
+with nfc.ContactlessFrontend('usb') as clf:
+    clf.connect(rdwr={'on-connect': personalize})
 ```
 
-## Appendice C — Struttura firmware
+## Appendice C — Struttura firmware TinyGo
 
 ```
 firmware/
-├── main/
-│   ├── main.c             ← app_main, task spawn
-│   ├── gpio_handler.c     ← ISR + gpio_isr_task
-│   ├── gpio_output.c      ← SET/PWM handler
-│   ├── pwm_fan.c          ← LEDC 25kHz
-│   ├── pn532_spi.c        ← driver PN532 via SPI
-│   ├── desfire_auth.c     ← 3-pass AES auth + TMAC (cuore del progetto)
-│   ├── desfire_file.c     ← ReadData con session key
-│   ├── nfc_task.c         ← orchestrazione NFC + invio eventi USB
-│   ├── usb_cdc.c          ← TinyUSB CDC + parser comandi
-│   ├── key_store.c        ← NVS load/save chiavi
-│   └── watchdog.c         ← safe_state()
-├── CMakeLists.txt
-└── sdkconfig.defaults     ← USB OTG, Flash Encryption off (debug)
+├── main.go           ← init + goroutine spawn
+├── gpio_handler.go   ← interrupt input + debounce + EVT
+├── gpio_output.go    ← SET on/off/pulse
+├── pwm_fan.go        ← LEDC 25kHz
+├── pn532_handler.go  ← PN532 SPI loop + IRQ
+├── desfire_auth.go   ← AES 3-pass auth + TMAC
+├── usb_handler.go    ← CDC read/write + watchdog
+├── key_store.go      ← NVS AES keys
+└── go.mod            ← tinygo-org/drivers
 ```
-
-## Appendice D — Tool personalizzazione tessere (Python, PC)
-
-```python
-# Richiede: pip install nfcpy  o  libreria freefare via pyscard
-# Hardware: ACR122U o PN532 su USB-UART (collegato al PC, non al Pi)
-
-import nfc
-import struct
-
-AID        = bytes([0xA5, 0xC3, 0x01])
-APP_KEY    = bytes.fromhex("000102030405060708090A0B0C0D0E0F")  # CAMBIARE!
-USER_ID    = b"MarioRossi\x00\x00\x00\x00\x00\x01"            # 16 byte
-
-def personalize_card(tag):
-    app = nfc.tag.tt4.Application(tag, AID)
-    app.select()
-    app.authenticate(key_no=0, key=b'\x00'*16)  # master key default
-    app.change_key(key_no=1, new_key=APP_KEY)    # imposta read key
-    app.create_std_data_file(file_no=1, size=16,
-                              access=(0x11, 0xFF, 0xFF, 0xFF))
-    # Autenticati con la nuova chiave per scrivere
-    app.authenticate(key_no=1, key=APP_KEY)
-    app.write_data(file_no=1, offset=0, data=USER_ID)
-    print(f"Tessera personalizzata: UID={tag.identifier.hex().upper()}")
-
-with nfc.ContactlessFrontend('usb') as clf:
-    clf.connect(rdwr={'on-connect': personalize_card})
-```
-
-> **Attenzione**: le chiavi nel tool di personalizzazione devono corrispondere esattamente a quelle caricate nell'NVS dell'ESP32-S3. Conservare le chiavi in un vault sicuro (non nel repo).
