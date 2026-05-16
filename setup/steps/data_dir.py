@@ -22,12 +22,19 @@ class StepDataDir(Step):
         runner.run(["mkdir", "-p", str(prefs)], sudo=True)
         runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(prefs)], sudo=True)
 
-        # Copia alarms.json dal repo se non esiste già a destinazione
-        alarms_src = REPO_ROOT / "preferences" / "alarms.json"
-        alarms_dst = prefs / "alarms.json"
-        if alarms_src.exists() and not runner.dry_run:
-            runner.run(["cp", "-n", str(alarms_src), str(alarms_dst)], sudo=True)
-            runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(alarms_dst)], sudo=True)
+        # Copia alarms.json e ai.json dal repo se non esistono già a destinazione
+        for json_file in ("alarms.json", "ai.json"):
+            src = REPO_ROOT / "preferences" / json_file
+            dst = prefs / json_file
+            if not runner.dry_run:
+                if src.exists():
+                    runner.run(["cp", "-n", str(src), str(dst)], sudo=True)
+                else:
+                    # Crea scheletro vuoto se il file non è nel repo
+                    runner.write(dst, "{}\n", sudo=True)
+                runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(dst)], sudo=True)
+            else:
+                runner.log(f"  [DRY-RUN] cp -n {src} → {dst}")
 
         # --- Certificato TLS per Mumble (in home/) ---
         runner.log("  Generazione certificato TLS...")
