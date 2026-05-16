@@ -11,7 +11,7 @@ class StepMumbleServer(Step):
     def __init__(self):
         super().__init__(
             "Mumble Server",
-            "Copia mumble-server.ini e abilita il servizio Murmur"
+            "Configura mumble-server.ini e abilita il servizio Murmur"
         )
 
     def execute(self, runner, sysinfo, config):
@@ -19,21 +19,29 @@ class StepMumbleServer(Step):
 
         script = REPO_ROOT / "setup" / "scripts" / "setup_mumble.sh"
         if script.exists():
-            runner.run(["bash", str(script)], sudo=True)
+            # Passa MUMBLE_PASSWORD come variabile d'ambiente allo script bash
+            # (lo script NON usa read interattivo — legge solo da env)
+            mumble_env = {"MUMBLE_PASSWORD": config.get("env_mumble_password", "")}
+            ok, _ = runner.run(["bash", str(script)], user="root", env=mumble_env)
+            if not ok and not runner.dry_run:
+                runner.log("  ⚠ setup_mumble.sh ha avuto errori — il servizio potrebbe non partire")
         else:
             runner.log("  ⚠ setup_mumble.sh non trovato, uso configurazione default")
-
-        runner.run(["systemctl", "enable", "mumble-server"], sudo=True)
-        runner.run(["systemctl", "start",  "mumble-server"], sudo=True)
+            runner.run(["systemctl", "enable", "mumble-server"], sudo=True)
+            runner.run(["systemctl", "start",  "mumble-server"], sudo=True)
 
         if not runner.dry_run:
+            runner.log("  Attendo avvio mumble-server...")
             for _ in range(15):
-                r = subprocess.run(
+                active = subprocess.run(
                     ["systemctl", "is-active", "--quiet", "mumble-server"]
                 ).returncode == 0
-                if r:
+                if active:
+                    runner.log("  ✓ mumble-server attivo")
                     break
                 time.sleep(1)
+            else:
+                runner.log("  ⚠ mumble-server non attivo dopo 15s")
 
         self._set_status(Status.DONE)
         return True

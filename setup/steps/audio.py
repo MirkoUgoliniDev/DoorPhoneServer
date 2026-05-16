@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from lib.step_base import Step, Status
-from lib.audio_utils import detect_audio_cards, generate_asound_conf
+from lib.audio_utils import best_card_pair, generate_asound_conf
 
 
 class StepAudioConfig(Step):
@@ -19,20 +19,14 @@ class StepAudioConfig(Step):
             config.get("play_card") is None or config.get("_audio_autodetect")
         ):
             runner.log("  Rilevo schede audio...")
-            play_cards, cap_cards = detect_audio_cards()
-            if play_cards:
-                runner.log(
-                    "  Schede OUTPUT rilevate: "
-                    + ", ".join(str(c) for c in play_cards)
-                )
-                config["play_card"] = play_cards[0].index
-            if cap_cards:
-                runner.log(
-                    "  Schede INPUT rilevate: "
-                    + ", ".join(str(c) for c in cap_cards)
-                )
-                config["cap_card"] = cap_cards[0].index
-            if not play_cards and not cap_cards:
+            play_card_obj, cap_card_obj = best_card_pair()
+            if play_card_obj:
+                runner.log(f"  Scheda OUTPUT selezionata: {play_card_obj}")
+                config["play_card"] = play_card_obj.index
+            if cap_card_obj:
+                runner.log(f"  Scheda INPUT  selezionata: {cap_card_obj}")
+                config["cap_card"] = cap_card_obj.index
+            if not play_card_obj and not cap_card_obj:
                 runner.log("  ⚠ Nessuna scheda audio rilevata.")
                 runner.log("    Collega la scheda USB e ri-esegui la configurazione con:")
                 runner.log("    python3 setup/setup_wizard.py --audio-setup")
@@ -40,9 +34,9 @@ class StepAudioConfig(Step):
                 self._set_status(Status.SKIPPED)
                 return True
 
-        play_card = max(0, min(9, int(config.get("play_card") or 1)))
+        play_card = max(0, min(9, int(config.get("play_card") or 0)))
         play_dev  = max(0, min(3, int(config.get("play_dev")  or 0)))
-        cap_card  = max(0, min(9, int(config.get("cap_card")  or 1)))
+        cap_card  = max(0, min(9, int(config.get("cap_card")  or 0)))
         cap_dev   = max(0, min(3, int(config.get("cap_dev")   or 0)))
 
         runner.log(f"  Output : card {play_card}, device {play_dev}")

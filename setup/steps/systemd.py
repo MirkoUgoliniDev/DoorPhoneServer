@@ -29,9 +29,16 @@ class StepSystemdService(Step):
         if not runner.dry_run and not (GOBIN / "doorphoneserver").exists():
             runner.log("  ⚠ Binario non trovato in GOBIN — il service potrebbe non partire")
 
-        # --- Sudoers per web panel ---
+        # --- Sudoers per web panel e crontab ---
+        # /usr/bin/systemctl copre: start/stop/restart/reboot (usato anche dal crontab)
+        # restart_tablet.sh copre il riavvio remoto del tablet da crontab
+        tablet_script = Path("/home") / TK_USER / "setup" / "scripts" / "restart_tablet.sh"
         sudoers = Path("/etc/sudoers.d/doorphoneserver-panel")
-        runner.write(sudoers, f"{TK_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n", sudo=True)
+        sudoers_content = (
+            f"{TK_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n"
+            f"{TK_USER} ALL=(ALL) NOPASSWD: /bin/bash {tablet_script}\n"
+        )
+        runner.write(sudoers, sudoers_content, sudo=True)
         if not runner.dry_run:
             runner.run(["chmod", "440", str(sudoers)], sudo=True)
             ok, out = runner.run(["visudo", "-c", "-f", str(sudoers)], sudo=True)
@@ -45,7 +52,7 @@ class StepSystemdService(Step):
         # --- Crontab (riavvii notturni + restart tablet) ---
         cron_script = REPO_ROOT / "setup" / "scripts" / "setup_crontab.sh"
         if cron_script.exists():
-            runner.run(["sudo", "-u", TK_USER, "bash", str(cron_script)])
+            runner.run(["bash", str(cron_script)], user=TK_USER)
             runner.log("  ✓ Crontab installato")
         else:
             runner.log("  ⚠ setup_crontab.sh non trovato, crontab non installato")

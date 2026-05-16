@@ -61,6 +61,5 @@ apk/*.apk
 # Profiling
 *.prof
 doorphoneserver.lock
-doorphoneserver
 
 __pycache__/

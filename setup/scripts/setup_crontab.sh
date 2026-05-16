@@ -8,14 +8,17 @@
 #    5  0 * * *  Riavvio tablet dopo il riavvio notturno
 #    5  6 * * *  Riavvio tablet dopo il riavvio mattutino
 #    0  * * * *  Restart mumble-server ogni ora (disabilitato, abilitare se necessario)
+#
+# NOTA: usa "sudo systemctl reboot" — coperto dal sudoers doorphoneserver-panel
+#       (/usr/bin/systemctl NOPASSWD), NON shutdown che richiederebbe sudoers separato.
 
 SCRIPTS_DIR="/home/doorphoneserver/setup/scripts"
 
 crontab - << CRON
 # DoorPhoneServer — crontab gestito da setup_crontab.sh
 # Riavvii programmati del Raspberry Pi
-59 23 * * * sudo /sbin/shutdown -r now
-0 6 * * * sudo /sbin/shutdown -r now
+59 23 * * * sudo systemctl reboot
+0 6 * * * sudo systemctl reboot
 
 # Riavvio tablet dopo ogni riavvio Pi (con ritardo per dare tempo al boot)
 5 0 * * * sudo bash $SCRIPTS_DIR/restart_tablet.sh
