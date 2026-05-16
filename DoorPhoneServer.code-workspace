@@ -1,0 +1,78 @@
+sudo tee /home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect/talkkonnect.code-workspace << 'EOF'
+{
+    "remoteAuthority": "ssh-remote+pi@192.168.1.151",
+    "folders": [
+        {
+            "name": "DoorPhoneServer",
+            "uri": "vscode-remote://ssh-remote+pi@192.168.1.151/home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect"
+        }
+    ],
+    "settings": {
+        "workbench.colorCustomizations": {
+            "statusBar.background": "#1A7A1A",
+            "statusBar.noFolderBackground": "#8a008f",
+            "statusBar.debuggingBackground": "#8a008f",
+            "statusBar.foreground": "#ffffff",
+            "statusBar.debuggingForeground": "#ffffff"
+        },
+        "actionButtons": {
+            "defaultColor": "#1A7A1A",
+            "loadNpmCommands": false,
+            "commands": [
+                {
+                    "name": "$(gear) Build DoorPhoneServer",
+                    "color": "#FFFFFF",
+                    "command": "cd /home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect && ./tkbuild.sh",
+                    "tooltip": "Esegui il task 'BuildDoorPhoneServer'",
+                    "singleInstance": true
+                },
+                {
+                    "name": "$(refresh) Restart Service",
+                    "color": "#FFFFFF",
+                    "command": "sudo systemctl restart doorphoneserver",
+                    "tooltip": "Riavvia il servizio DoorPhoneServer",
+                    "singleInstance": true
+                },
+                {
+                    "name": "$(info) Status",
+                    "color": "#FFFFFF",
+                    "command": "systemctl status doorphoneserver",
+                    "tooltip": "Controlla lo stato del servizio",
+                    "singleInstance": true
+                }
+            ]
+        },
+        "go.lintTool": "golangci-lint",
+        "go.formatTool": "gofmt",
+        "go.useLanguageServer": true,
+        "[go]": {
+            "editor.formatOnSave": true,
+            "editor.codeActionsOnSave": {
+                "source.organizeImports": "explicit"
+            }
+        },
+        "files.exclude": {
+            "**/.git": true,
+            ".gitignore": false,
+            "**/.vscode": true,
+            "**/*.lock": true,
+            "**/go.sum": false,
+            "**/*.o": true,
+            "**/*.exe": true,
+            "**/*.test": true,
+            "**/*.log": false,
+            "**/*.log.[0-9]*": true,
+            "**/*.code-workspace": false,
+            "**/soundfiles/tmp": true
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "golang.go",
+            "neonxp.gotools",
+            "seunlanlege.action-buttons",
+            "ms-vscode-remote.remote-ssh"
+        ]
+    }
+}
+EOF

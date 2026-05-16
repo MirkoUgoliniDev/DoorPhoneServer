@@ -1,0 +1,66 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables (secrets)
+.env
+
+doorphoneserver.xml.bak.*
+
+# Claude Code internal
+.claude/
+.cache/
+.config/
+
+# File home utente di sistema (non appartengono al repo)
+.bashrc
+.bash_logout
+.profile
+
+# Backup XML
+*.backup
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary
+*.test
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go module cache e binari compilati (GOPATH locale)
+gocode/
+bin/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+Logs/
+
+# golangci-lint binary distribution
+golangci-lint-*/
+
+# Snapshots
+snapshots/
+
+# APK uploads
+apk/*.apk
+
+# Profiling
+*.prof
+doorphoneserver.lock
+doorphoneserver
+
+__pycache__/

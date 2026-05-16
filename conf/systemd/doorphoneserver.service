@@ -1,0 +1,23 @@
+[Unit]
+Description=DoorPhoneServer Service
+Requires=network.target sound.target
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=doorphoneserver
+Group=doorphoneserver
+Type=simple
+WorkingDirectory=/home/doorphoneserver
+ExecStartPre=/bin/sleep 15
+ExecStart=/home/doorphoneserver/bin/doorphoneserver -config=/home/doorphoneserver/gocode/src/github.com/MirkoUgoliniDev/doorphoneserver/doorphoneserver.xml
+ExecStop=/bin/kill -s SIGTERM $MAINPID
+Restart=always
+RestartSec=10
+
+# Sicurezza base
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

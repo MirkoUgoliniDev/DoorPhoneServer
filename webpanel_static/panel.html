@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DoorPhoneServer Panel</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/panel.css">
+<link rel="stylesheet" href="/static/bootstrap-icons.min.css">
+</head>
+<body>
+
+<!-- Sudo Modal -->
+<div class="modal-overlay" id="sudoModal">
+<div class="modal-box" style="width:560px;max-width:95vw">
+<div class="modal-header">
+<div class="modal-icon info">&#x25B6;</div>
+<div class="modal-title" id="sudoModalTitle">Esecuzione comando</div>
+</div>
+<div class="modal-body" style="padding-bottom:4px">
+<pre id="sudoOutput" style="background:#0a0f1a;color:#e2e8f0;padding:14px;border-radius:6px;font-size:12px;font-family:monospace;min-height:90px;max-height:280px;overflow-y:auto;margin:0;white-space:pre-wrap;word-break:break-all;border:1px solid var(--border)">In attesa...</pre>
+</div>
+<div class="modal-footer">
+<button class="modal-btn cancel" onclick="closeSudoModal()">Chiudi</button>
+</div>
+</div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+<div class="modal-box">
+<div class="modal-header">
+<div class="modal-icon warn" id="modalIcon">⚠</div>
+<div class="modal-title" id="modalTitle">Confirm</div>
+</div>
+<div class="modal-body" id="modalBody">Are you sure?</div>
+<div class="modal-footer">
+<button class="modal-btn cancel" id="modalCancel">Cancel</button>
+<button class="modal-btn danger" id="modalOk">Confirm</button>
+</div>
+</div>
+</div>
+
+<!-- Alarm Modal -->
+<div class="modal-overlay" id="alarmModal">
+<div class="modal-box" style="width:360px;max-width:95vw">
+<div class="modal-header">
+<div class="modal-icon warn">🔔</div>
+<div class="modal-title" id="alarmModalTitle">Configura Allarme</div>
+</div>
+<div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+<label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+<input type="checkbox" id="alarmEnabled" style="width:18px;height:18px;cursor:pointer">
+<span style="font-size:14px">Allarme abilitato</span>
+</label>
+<div id="alarmThresholdRow">
+<label style="font-size:13px;color:var(--dim);display:block;margin-bottom:4px" id="alarmThresholdLabel">Soglia</label>
+<input type="number" id="alarmThreshold" step="0.1" min="0" style="width:100%;box-sizing:border-box;background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px">
+</div>
+<div style="font-size:12px;color:var(--dim)" id="alarmHint"></div>
+</div>
+<div class="modal-footer">
+<button class="modal-btn cancel" onclick="closeAlarmModal()">Annulla</button>
+<button class="modal-btn" style="background:#2563eb;color:#fff" onclick="saveAlarm()">Salva</button>
+</div>
+</div>
+</div>
+
+<!-- OSD Modal -->
+<div class="modal-overlay" id="osdModal">
+<div class="modal-box" style="width:400px;max-width:95vw">
+<div class="modal-header">
+<div class="modal-icon info"><i class="bi bi-badge-cc"></i></div>
+<div class="modal-title">Configura OSD Camera</div>
+</div>
+<div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+<label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+<input type="checkbox" id="osdEnabledCheck" style="width:18px;height:18px;cursor:pointer">
+<span style="font-size:14px">OSD abilitato</span>
+</label>
+<div>
+<label style="font-size:13px;color:var(--dim);display:block;margin-bottom:4px">Testo OSD (max 48 caratteri)</label>
+<input type="text" id="osdTextInput" maxlength="48" style="width:100%;box-sizing:border-box;background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px">
+</div>
+<div>
+<label style="font-size:13px;color:var(--dim);display:block;margin-bottom:4px">Posizione</label>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+<label class="osd-pos-opt" data-pos="tl"><input type="radio" name="osdPos" value="tl"> Alto-Sinistra</label>
+<label class="osd-pos-opt" data-pos="tr"><input type="radio" name="osdPos" value="tr"> Alto-Destra</label>
+<label class="osd-pos-opt" data-pos="bl"><input type="radio" name="osdPos" value="bl"> Basso-Sinistra</label>
+<label class="osd-pos-opt" data-pos="br"><input type="radio" name="osdPos" value="br"> Basso-Destra</label>
+</div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="modal-btn cancel" onclick="closeOSDModal()">Annulla</button>
+<button class="modal-btn" id="osdApplyBtn" style="background:#2563eb;color:#fff" onclick="applyOSDSettings()">Applica</button>
+</div>
+</div>
+</div>
+
+<div class="header">
+<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+<div><h1>DoorPhoneServer</h1><span class="ver" id="panelVer"></span></div>
+<div id="liveClock" style="position:absolute;left:50%;transform:translateX(-50%);font-size:22px;font-weight:700;color:var(--accent);letter-spacing:1px;white-space:nowrap"></div>
+</div>
+
+<div class="tabs">
+<div class="tab active" data-page="dashboard">Dashboard</div>
+<div class="tab" data-page="config">Config Editor</div>
+<div class="tab" data-page="apk">Gestione APK</div>
+<div class="tab" data-page="sounds">Sound</div>
+<div class="tab" data-page="video">Video Stream</div>
+<div class="tab" data-page="snapshots">Snapshots</div>
+<div class="tab" data-page="logs">Log Viewer</div>
+<div class="tab" data-page="users">Utenti Mumble</div>
+<div class="tab" data-page="audiotest">Audio Test</div>
+<div class="tab" data-page="speakingtimeline">Timeline Parlato</div>
+<div class="tab" data-page="chimaai">AI</div>
+<div class="tab" data-page="crontab">Crontab</div>
+<div class="tab" data-page="log2ram">Log2Ram</div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="page active" id="page-dashboard">
+<div class="card">
+<h2>Service Status</h2>
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
+<div style="display:flex;align-items:center;gap:8px">
+<span id="svcDot" style="width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block"></span>
+<span id="svcStatus" style="font-size:14px;font-weight:600">Loading...</span>
+<span class="heartbeat-box" id="hbBox" style="display:none">
+<span class="hb-icon" id="hbIcon">&#x2764;</span>
+<span class="hb-text" id="hbText"></span>
+</span>
+</div>
+<div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+<span style="color:var(--dim);font-size:13px" id="svcUptime"></span>
+<button id="svcToggleBtn" class="btn btn-sm" style="background:var(--dim);color:#fff;width:40px;height:40px;min-width:40px;padding:0;font-size:18px;border-radius:6px" onclick="svcToggle()">--</button>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:12px">
+<h2>Mumble Server</h2>
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
+<div style="display:flex;align-items:center;gap:8px">
+<span id="mumbleDot" style="width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block"></span>
+<span id="mumbleStatus" style="font-size:14px;font-weight:600">Checking...</span>
+</div>
+<div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+<span id="mumbleUptime" style="color:var(--dim);font-size:13px"></span>
+<button id="mumbleToggleBtn" class="btn btn-sm" style="background:var(--dim);color:#fff;width:40px;height:40px;min-width:40px;padding:0;font-size:18px;border-radius:6px" onclick="mumbleToggle()">--</button>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:12px">
+<h2>Tablet Control</h2>
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
+<div style="display:flex;align-items:center;gap:10px">
+<span id="tabletDot" style="width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0"></span>
+<span style="font-size:14px;font-weight:600">Tablet</span>
+<span id="tabletStatus" style="font-size:13px;color:var(--dim)">--</span>
+</div>
+<div style="margin-left:auto">
+<button id="tabletToggleBtn" class="btn btn-sm" onclick="tabletToggle()" style="min-width:90px">--</button>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:12px">
+<h2>Raspberry Pi</h2>
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font-size:18px;line-height:1">&#x1F501;</span>
+<span style="font-size:14px;font-weight:600">Raspberry Pi</span>
+<span style="font-size:12px;color:var(--dim)">Riavvio completo del sistema</span>
+</div>
+<div style="margin-left:auto">
+<button class="btn btn-warn btn-sm" onclick="rebootServer()" style="min-width:90px">Reboot</button>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:12px">
+<h2><i class="bi bi-info-circle" style="margin-right:8px;color:var(--accent)"></i>Informazioni Sistema</h2>
+<div class="sysinfo-grid" id="sysinfoGrid">
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(56,189,248,.12);color:#38bdf8"><i class="bi bi-ubuntu"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Sistema Operativo</span><span class="sysinfo-chip-value" id="si-os">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(56,189,248,.12);color:#38bdf8"><i class="bi bi-layers-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Kernel</span><span class="sysinfo-chip-value" id="si-kernel">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(34,197,94,.12);color:#22c55e"><i class="bi bi-cpu-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Modello Hardware</span><span class="sysinfo-chip-value" id="si-cpumodel">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(34,197,94,.12);color:#22c55e"><i class="bi bi-grid-3x3-gap-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Core CPU &amp; Architettura</span><span class="sysinfo-chip-value" id="si-cores">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(249,115,22,.12);color:#f97316"><i class="bi bi-hdd-network-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Hostname</span><span class="sysinfo-chip-value" id="si-hostname">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(249,115,22,.12);color:#f97316"><i class="bi bi-broadcast-pin"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">DoorPhoneServer</span><span class="sysinfo-chip-value" id="si-appver">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(167,139,250,.12);color:#a78bfa"><i class="bi bi-code-slash"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Go Runtime</span><span class="sysinfo-chip-value" id="si-gover">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(167,139,250,.12);color:#a78bfa"><i class="bi bi-stopwatch-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Uptime Sistema</span><span class="sysinfo-chip-value" id="si-uptime">--</span></div>
+  </div>
+  <div class="sysinfo-chip">
+    <div class="sysinfo-chip-icon" style="background:rgba(251,191,36,.12);color:#fbbf24"><i class="bi bi-calendar-check-fill"></i></div>
+    <div class="sysinfo-chip-body"><span class="sysinfo-chip-label">Ultimo Boot</span><span class="sysinfo-chip-value" id="si-boot">--</span></div>
+  </div>
+</div>
+</div>
+<div class="stat-grid" id="statsGrid">
+<div class="stat-card" style="position:relative"><button id="alarmBtnTemp" onclick="openAlarmModal('cpu_temp')" title="Configura allarme Temperatura" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="cpuTemp">--</div><div class="label">CPU Temp</div><div class="gauge"><div class="gauge-fill" id="gaugeCpuTemp" style="width:0%;background:var(--accent)"></div></div></div>
+<div class="stat-card" style="position:relative"><button id="alarmBtnLoad" onclick="openAlarmModal('load_avg')" title="Configura allarme Load Average" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="cpuLoad">--</div><div class="label">Load Average</div></div>
+<div class="stat-card" style="position:relative"><button id="alarmBtnRam" onclick="openAlarmModal('ram_pct')" title="Configura allarme RAM" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="memUsed">--</div><div class="label">RAM Used</div><div class="gauge"><div class="gauge-fill" id="gaugeMem" style="width:0%;background:var(--green)"></div></div></div>
+<div class="stat-card" style="position:relative"><button id="alarmBtnDisk" onclick="openAlarmModal('disk_pct')" title="Configura allarme Disco" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="diskUsed">--</div><div class="label">Disk Used</div><div class="gauge"><div class="gauge-fill" id="gaugeDisk" style="width:0%;background:var(--orange)"></div></div><button class="btn btn-sm" onclick="diskCleanup()" style="margin-top:8px;font-size:11px;padding:3px 10px;background:var(--orange);color:#0f172a;border:none;border-radius:6px;cursor:pointer;width:100%" title="Clean caches &amp; logs">🧹 Clean</button></div>
+<div class="stat-card"><div class="val" id="goRoutines">--</div><div class="label">Goroutines</div></div>
+<div class="stat-card"><div class="val" id="goMem">--</div><div class="label">Go Heap</div></div>
+<div class="stat-card"><div class="val" id="cpuFreq">--</div><div class="label">CPU Freq</div><div class="gauge"><div class="gauge-fill" id="gaugeCpuFreq" style="width:0%;background:var(--accent)"></div></div></div>
+<div class="stat-card"><div class="val" id="coreVolt">--</div><div class="label">Core Voltage</div></div>
+<div class="stat-card" style="position:relative"><button id="alarmBtnThrottle" onclick="openAlarmModal('throttle')" title="Configura allarme Throttle" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="throttled">--</div><div class="label">Throttle</div></div>
+<div class="stat-card" style="position:relative"><button id="alarmBtnPushover" onclick="openAlarmModal('pushover_remaining')" title="Configura allarme messaggi Pushover" style="position:absolute;top:6px;right:6px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px;line-height:1">🔔</button><div class="val" id="pushoverRemaining">--</div><div class="label">Pushover</div><div class="gauge"><div class="gauge-fill" id="gaugePushover" style="width:0%;background:var(--green)"></div></div><div id="pushoverDetail" style="font-size:10px;color:var(--dim);margin-top:4px;text-align:center">--</div></div>
+</div>
+<div class="card" style="margin-top:16px">
+<div class="bar" style="margin-bottom:8px">
+<h2 style="margin:0">Resource History (last 60 samples — 3s interval)</h2>
+<div class="chart-toggles" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+<button class="chart-toggle on" id="togCpu" onclick="toggleSeries('cpu')" style="--tc:#38bdf8">CPU</button>
+<button class="chart-toggle on" id="togMem" onclick="toggleSeries('mem')" style="--tc:#22c55e">RAM</button>
+<button class="chart-toggle on" id="togTemp" onclick="toggleSeries('temp')" style="--tc:#f97316">Temp</button>
+<button class="chart-toggle on" id="togDisk" onclick="toggleSeries('disk')" style="--tc:#a78bfa">Disk</button>
+<button class="chart-toggle on" id="togGo" onclick="toggleSeries('go')" style="--tc:#fb7185">Go Mem</button>
+<button class="chart-toggle on" id="togThrottle" onclick="toggleSeries('throttle')" style="--tc:#facc15">Throttle</button>
+</div>
+</div>
+<canvas id="chartCanvas" height="280"></canvas>
+</div>
+</div>
+
+<!-- CONFIG EDITOR -->
+<div class="page" id="page-config">
+<div class="card">
+<h2>doorphoneserver.xml</h2>
+<div class="bar">
+<button class="btn btn-primary" onclick="saveConfig()">Save Config</button>
+<button class="btn btn-warn" onclick="loadConfig()">Reload from Disk</button>
+<span id="configMsg" style="color:var(--dim);font-size:13px"></span>
+<span style="color:var(--dim);font-size:12px;margin-left:auto">Ctrl+Shift+F = fold all &nbsp;|&nbsp; clic su ▸ per espandere/collassare</span>
+</div>
+<div id="configEditor" style="width:100%;height:600px;border-radius:6px;border:1px solid var(--border);font-size:13px"></div>
+</div>
+</div>
+
+<!-- APK MANAGER -->
+<div class="page" id="page-apk">
+<div class="card" style="margin-bottom:16px">
+<h2>Upload APK</h2>
+<div class="drop-zone" id="apkDropZone" onclick="document.getElementById('apkFileInput').click()">
+Trascina qui il file APK oppure clicca per sfogliare<br><small>Solo file .apk — max 200MB</small>
+</div>
+<input type="file" id="apkFileInput" accept=".apk" style="display:none" onchange="uploadApk(this.files[0])">
+</div>
+<div class="card">
+<h2>APK disponibili</h2>
+<ul class="file-list" id="apkList"></ul>
+</div>
+</div>
+
+<!-- SOUNDS -->
+<div class="page" id="page-sounds">
+<div class="card" style="margin-bottom:16px">
+<h2>Volume Control</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div>
+<div class="bar" style="margin-bottom:6px"><span style="font-size:13px;font-weight:600">&#128266; Speaker (Headphone)</span><span id="muteOutBadge" class="mute-badge mute-off" onclick="toggleMute('Headphone')" title="Click to toggle mute">UNMUTED</span><span id="volOutVal" style="margin-left:auto;font-size:13px;color:var(--accent)">--</span></div>
+<input type="range" id="volOut" min="0" max="100" value="0" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('volOutVal').textContent=this.value+'%'" onchange="setVolume('Headphone',this.value)">
+</div>
+<div>
+<div class="bar" style="margin-bottom:6px"><span style="font-size:13px;font-weight:600">&#127908; Microphone (Mic)</span><span id="muteInBadge" class="mute-badge mute-off" onclick="toggleMute('Mic')" title="Click to toggle mute">UNMUTED</span><span id="volInVal" style="margin-left:auto;font-size:13px;color:var(--accent)">--</span></div>
+<input type="range" id="volIn" min="0" max="100" value="0" style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('volInVal').textContent=this.value+'%'" onchange="setVolume('Mic',this.value)">
+</div>
+</div>
+</div>
+<div class="card">
+<h2>Upload Sound File (MP3 / WAV)</h2>
+<div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+Drop files here or click to browse<br><small>Max 10MB — .mp3 or .wav only</small>
+</div>
+<input type="file" id="fileInput" accept=".mp3,.wav" style="display:none" onchange="uploadFile(this.files[0])">
+</div>
+<div class="card">
+<h2>Events Folder</h2>
+<div id="audioPlayerBox" style="display:none;margin-bottom:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+<div class="bar" style="margin:0"><span id="nowPlaying" style="font-size:13px;color:var(--accent)"></span><button class="btn btn-sm btn-danger btn-icon" title="Stop Browser" onclick="stopAudio()"><i class="bi bi-stop-fill"></i></button><button class="btn btn-sm btn-icon" style="background:#7c3aed;color:#fff;margin-left:6px" title="Stop Citofono" onclick="stopPiAudio()"><i class="bi bi-bell-fill"></i> <i class="bi bi-stop-fill"></i></button></div>
+<audio id="audioPlayer" controls style="width:100%;margin-top:8px;height:36px"></audio>
+</div>
+<ul class="file-list" id="soundList"></ul>
+</div>
+</div>
+
+<!-- VIDEO STREAM -->
+<div class="page" id="page-video">
+<div class="card" style="margin-bottom:12px">
+<h2>RTSP Stream (da config)</h2>
+<div id="rtspInfo" style="margin-bottom:10px;font-size:13px;color:var(--dim)">Caricamento...</div>
+<div class="bar" style="flex-wrap:wrap;gap:8px">
+<button id="rtspToggleBtn" class="btn btn-primary btn-sm" onclick="rtspToggle()">Connetti</button>
+<button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="rtspSnapshot()">Snapshot</button>
+<button id="syncTimeBtn" class="btn btn-sm" style="background:#0ea5e9;color:#fff;display:inline-flex;align-items:center;gap:4px" onclick="syncCameraTime()" title="Sincronizza orologio camera"><i class="bi bi-clock-history"></i> Sync Ora</button>
+<button id="osdTextBtn" class="btn btn-sm" style="background:#334155;color:#fff;display:inline-flex;align-items:center;gap:4px" onclick="openOSDModal()" title="Configura testo OSD"><i class="bi bi-badge-cc"></i> OSD</button>
+<button id="spotlightBtn" class="btn btn-sm" style="background:transparent;border:none;font-size:22px;cursor:not-allowed;padding:4px 8px;color:#334155;opacity:0.3" onclick="toggleSpotlight()" title="Connetti la camera per usare il faro"><i class="bi bi-lightbulb-off"></i></button>
+</div>
+<div id="rtspContainer" style="margin-top:12px;background:#000;border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+<video id="rtspVideo" autoplay playsinline muted style="width:100%;height:auto;border-radius:8px;display:none;object-fit:cover"></video>
+<span id="rtspPlaceholder" style="color:var(--dim);font-size:14px;padding:80px 0;position:absolute">Clicca Connetti per avviare lo stream RTSP</span>
+</div>
+</div>
+</div>
+
+<!-- SNAPSHOTS -->
+<div class="page" id="page-snapshots">
+<div class="card">
+<h2 style="display:flex;align-items:center;gap:8px">Snapshots <button class="btn btn-sm" onclick="loadSnapshots()" title="Aggiorna" style="padding:2px 7px;font-size:15px;line-height:1"><i class="bi bi-arrow-clockwise"></i></button></h2>
+<div class="bar" style="flex-wrap:wrap;gap:8px;align-items:center">
+<button class="btn btn-sm floor-btn active" data-floor="" onclick="loadSnapshots('')">Tutti</button>
+<button class="btn btn-sm floor-btn" data-floor="P1" onclick="loadSnapshots('P1')">P1</button>
+<button class="btn btn-sm floor-btn" data-floor="P2" onclick="loadSnapshots('P2')">P2</button>
+<button class="btn btn-sm floor-btn" data-floor="P3" onclick="loadSnapshots('P3')">P3</button>
+<button class="btn btn-sm floor-btn" data-floor="P4" onclick="loadSnapshots('P4')">P4</button>
+<span style="color:var(--dim);font-size:13px" id="snapCount"></span>
+<button class="btn btn-danger btn-sm" id="btnDeleteAll" onclick="deleteAllSnapshots()" style="margin-left:auto" disabled><i class="bi bi-trash3-fill"></i> Elimina Tutte</button>
+</div>
+<div id="snapGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px"></div>
+</div>
+
+<!-- Snapshot Lightbox -->
+<div id="snapLightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;cursor:pointer" onclick="closeLightbox()">
+<img id="snapLightboxImg" style="max-width:95%;max-height:95%;border-radius:8px">
+</div>
+</div>
+
+<!-- LOGS -->
+<div class="page" id="page-logs">
+<div class="card">
+<h2>Log Viewer</h2>
+<div class="bar">
+<label style="font-size:13px;color:var(--dim)">Lines:
+<select id="logLines" onchange="loadLog()" style="background:var(--card);color:var(--text);border:1px solid var(--border);padding:4px;border-radius:4px">
+<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option><option value="500">500</option><option value="1000">1000</option>
+</select></label>
+<label style="font-size:13px;color:var(--dim)"><input type="checkbox" id="logAuto" checked> Auto-refresh 5s</label>
+<button class="btn btn-primary btn-sm" onclick="loadLog()" title="Aggiorna" style="padding:4px 9px;font-size:15px;line-height:1"><i class="bi bi-arrow-clockwise"></i></button>
+<button class="btn btn-danger btn-sm" id="aiAnalyzeBtn" onclick="aiAnalyzeLog()" style="margin-left:4px;background:#7c3aed;border:none">🤖 AI Analyze</button>
+<button class="btn btn-warn btn-sm" onclick="clearAnalysis()" style="margin-left:2px">Svuota Log</button>
+<button class="btn btn-sm" onclick="copyLog()" style="margin-left:4px;background:var(--accent);color:#fff">&#128203; Copia Log</button>
+</div>
+<div class="log-error-summary" id="logSummary"></div>
+<div class="log-view" id="logContent">Loading...</div>
+</div>
+</div>
+
+<div class="page" id="page-users">
+<div class="card">
+<h2>Utenti Mumble Connessi</h2>
+<div class="bar" style="margin-bottom:8px">
+  <button class="btn btn-primary btn-sm" onclick="loadMumbleUsers()" title="Aggiorna" style="padding:4px 9px;font-size:15px;line-height:1"><i class="bi bi-arrow-clockwise"></i></button>
+  <label style="font-size:13px;color:var(--dim);margin-left:8px"><input type="checkbox" id="usersAutoRefresh" checked> Auto-refresh 5s</label>
+  <span id="userCount" style="font-size:13px;color:var(--dim);margin-left:auto"></span>
+</div>
+<div id="usersTableWrap" style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="color:var(--dim);text-align:left;border-bottom:1px solid var(--border)">
+        <th style="padding:6px 10px">Nome</th>
+        <th style="padding:6px 10px">Stato</th>
+        <th style="padding:6px 10px">Connesso alle</th>
+        <th style="padding:6px 10px">Azione</th>
+      </tr>
+    </thead>
+    <tbody id="usersTableBody">
+      <tr><td colspan="4" style="padding:12px;color:var(--dim)">Caricamento...</td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+</div>
+
+<!-- AUDIO TEST -->
+<div class="page" id="page-audiotest">
+<div class="card" style="margin-bottom:16px">
+<h2>Upload File Audio (.wav / .mp3)</h2>
+<div class="drop-zone" id="atDropZone" onclick="document.getElementById('atFileInput').click()">
+Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
+</div>
+<input type="file" id="atFileInput" accept=".wav,.mp3" style="display:none" onchange="uploadAudioTest(this.files[0])">
+</div>
+<div class="card">
+<h2>File Audio Test</h2>
+<div id="atPlayerBox" style="display:none;margin-bottom:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+<div class="bar" style="margin:0"><span id="atNowPlaying" style="font-size:13px;color:var(--accent)"></span><button class="btn btn-sm btn-danger btn-icon" title="Stop" onclick="atStopAudio()"><i class="bi bi-stop-fill"></i></button></div>
+<audio id="atAudioPlayer" controls style="width:100%;margin-top:8px;height:36px"></audio>
+</div>
+<ul class="file-list" id="atFileList"></ul>
+</div>
+</div>
+
+<!-- CHIMA AI -->
+<div class="page" id="page-chimaai">
+<div id="orSelectedBar" style="display:none;margin-bottom:14px;padding:12px 18px;background:linear-gradient(90deg,#1e3a5f,#1e4d2b);border:1px solid #2563eb;border-radius:8px;display:flex;align-items:center;gap:12px">
+  <i class="bi bi-cpu-fill" style="color:#38bdf8;font-size:18px;flex-shrink:0"></i>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px">Modello AI selezionato</div>
+    <div id="orSelectedName" style="font-size:14px;font-weight:700;color:#f0f9ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+    <div id="orSelectedId" style="font-size:11px;color:#64748b;font-family:monospace;margin-top:1px"></div>
+  </div>
+  <button class="btn btn-sm" onclick="clearORSelected()" style="background:#374151;color:#e2e8f0;flex-shrink:0" title="Deseleziona modello"><i class="bi bi-x-lg"></i></button>
+</div>
+<div class="card">
+<div class="bar" style="margin-bottom:12px">
+  <h2 style="margin:0">Modelli OpenRouter disponibili</h2>
+  <button class="btn btn-primary btn-sm" onclick="loadORModels()" style="margin-left:auto" title="Aggiorna"><i class="bi bi-arrow-clockwise"></i> Aggiorna</button>
+</div>
+<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <input type="text" id="orSearch" placeholder="Cerca modello..." oninput="filterORModels()"
+    style="flex:1;min-width:180px;background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:7px 10px;font-size:13px">
+  <label style="font-size:13px;color:var(--dim);white-space:nowrap">
+    <input type="checkbox" id="orFreeOnly" onchange="filterORModels()"> Solo gratuiti
+  </label>
+  <span id="orCount" style="font-size:12px;color:var(--dim)"></span>
+</div>
+<div id="orLoading" style="color:var(--dim);font-size:13px;padding:20px 0">Caricamento modelli...</div>
+<div id="orTableWrap" style="overflow-x:auto;display:none">
+  <table id="orTable" style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="color:var(--dim);text-align:left;border-bottom:1px solid var(--border)">
+        <th style="padding:7px 10px;cursor:pointer" onclick="sortORModels('name')">Nome <span id="orSortName"></span></th>
+        <th style="padding:7px 10px;cursor:pointer" onclick="sortORModels('id')">ID <span id="orSortId"></span></th>
+        <th style="padding:7px 10px;text-align:right;cursor:pointer" onclick="sortORModels('prompt')">Costo Prompt (/M tok) <span id="orSortPrompt"></span></th>
+        <th style="padding:7px 10px;text-align:right;cursor:pointer" onclick="sortORModels('completion')">Costo Completion (/M tok) <span id="orSortCompletion"></span></th>
+        <th style="padding:7px 10px;text-align:right;cursor:pointer" onclick="sortORModels('context')">Contesto <span id="orSortContext"></span></th>
+        <th style="padding:7px 10px;text-align:center">Usa</th>
+      </tr>
+    </thead>
+    <tbody id="orTableBody"></tbody>
+  </table>
+</div>
+<div id="orError" style="display:none;color:#f87171;font-size:13px;padding:12px 0"></div>
+</div>
+</div>
+
+
+
+<!-- TIMELINE PARLATO -->
+<div class="page" id="page-speakingtimeline">
+<div class="card" style="margin-bottom:16px">
+<div class="bar" style="margin-bottom:14px">
+  <h2 style="margin:0"><i class="bi bi-activity"></i> Monitor Audio Live</h2>
+</div>
+<div style="margin-bottom:12px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+    <div id="txDot" style="width:12px;height:12px;border-radius:50%;background:#374151;flex-shrink:0;transition:background 0.3s"></div>
+    <span style="font-size:12px;color:var(--text-muted);width:120px;flex-shrink:0"><i class="bi bi-mic-fill"></i> Microfono</span>
+    <div style="flex:1;background:var(--bg);border-radius:6px;overflow:hidden;height:12px">
+      <div id="txBar" style="height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#7dd3fc);transition:width 0.15s"></div>
+    </div>
+    <span id="txLevel" style="font-size:11px;color:var(--text-muted);width:28px;text-align:right">—</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div id="rxDot" style="width:12px;height:12px;border-radius:50%;background:#374151;flex-shrink:0;transition:background 0.3s"></div>
+    <span id="rxFrom" style="font-size:12px;color:var(--text-muted);width:120px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class="bi bi-volume-up-fill"></i> Altoparlante</span>
+    <div style="flex:1;background:var(--bg);border-radius:6px;overflow:hidden;height:12px">
+      <div id="rxBar" style="height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#86efac);transition:width 0.15s"></div>
+    </div>
+    <span id="rxLevel" style="font-size:11px;color:var(--text-muted);width:28px;text-align:right">—</span>
+  </div>
+</div>
+</div>
+<div class="card">
+<div class="bar" style="margin-bottom:12px">
+  <h2 style="margin:0"><i class="bi bi-mic"></i> Timeline Parlato</h2>
+  <button class="btn btn-primary btn-sm" onclick="loadSpeakingLog()" style="margin-left:auto" title="Aggiorna"><i class="bi bi-arrow-clockwise"></i> Aggiorna</button>
+  <button class="btn btn-sm btn-danger" onclick="clearSpeakingLog()" style="margin-left:8px" title="Cancella tutto"><i class="bi bi-trash3"></i></button>
+</div>
+<div id="speakingLogLoading" style="color:var(--dim);font-size:13px;padding:12px 0">Caricamento...</div>
+<div id="speakingLogEmpty" style="display:none;color:var(--dim);font-size:13px;padding:20px 0;text-align:center">
+  <i class="bi bi-mic-mute" style="font-size:36px;display:block;margin-bottom:8px;opacity:0.3"></i>
+  Nessun evento di parlato registrato
+</div>
+<div id="speakingLogList" style="display:none;max-height:400px;overflow-y:auto"></div>
+</div>
+</div>
+
+<!-- CRONTAB -->
+<div class="page" id="page-crontab">
+<div class="card">
+<h2>Crontab Manager</h2>
+<div id="cronLoading" style="color:var(--dim);font-size:13px;padding:12px 0">Caricamento...</div>
+<div id="cronEmpty" style="display:none;color:var(--dim);font-size:13px;padding:20px 0;text-align:center">
+  <i class="bi bi-clock" style="font-size:36px;display:block;margin-bottom:8px;opacity:0.3"></i>
+  Nessun job crontab trovato
+</div>
+<div id="cronTableWrap" style="display:none;overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border)">
+        <th style="padding:8px 6px;text-align:left;color:var(--dim);font-weight:600">Attivo</th>
+        <th style="padding:8px 6px;text-align:left;color:var(--dim);font-weight:600">Schedule</th>
+        <th style="padding:8px 6px;text-align:left;color:var(--dim);font-weight:600">Comando</th>
+        <th style="padding:8px 6px;text-align:center;color:var(--dim);font-weight:600">Azioni</th>
+      </tr>
+    </thead>
+    <tbody id="cronTableBody"></tbody>
+  </table>
+</div>
+</div>
+<div class="card" style="margin-top:12px">
+<h2>Aggiungi Job</h2>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+  <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:160px">
+    <label style="font-size:12px;color:var(--dim)">Schedule (m h dom mon dow)</label>
+    <input id="cronNewSchedule" type="text" placeholder="es. 0 6 * * *" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;width:100%;box-sizing:border-box">
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:220px">
+    <label style="font-size:12px;color:var(--dim)">Comando</label>
+    <input id="cronNewCommand" type="text" placeholder="es. sudo /sbin/shutdown -r now" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;width:100%;box-sizing:border-box">
+  </div>
+  <button class="btn btn-sm" onclick="cronAdd()" style="height:34px;white-space:nowrap"><i class="bi bi-plus-lg"></i> Aggiungi</button>
+</div>
+</div>
+</div>
+
+<!-- LOG2RAM -->
+<div class="page" id="page-log2ram">
+
+<div class="card">
+<h2><i class="bi bi-memory" style="margin-right:8px;color:var(--accent)"></i>Stato Log2Ram</h2>
+<div style="display:inline-flex;align-items:center;gap:10px;padding:8px 18px;border-radius:24px;background:#0a0f1a;border:1px solid var(--border);margin-bottom:16px">
+  <span id="l2rDot" style="width:10px;height:10px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0;box-shadow:0 0 6px currentColor"></span>
+  <span id="l2rStatusText" style="font-size:13px;font-weight:600">Caricamento...</span>
+</div>
+<div id="l2rInfoGrid" class="sysinfo-grid"></div>
+<div id="l2rSizeRow" style="margin-top:14px;display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:#0a0f1a;border:1px solid var(--border);border-radius:8px">
+  <i class="bi bi-sliders" style="color:var(--accent);font-size:15px"></i>
+  <span style="color:var(--dim);font-size:12px;font-weight:500">RAM Size allocata:</span>
+  <input type="number" id="l2rSizeInput" min="64" max="512" step="1"
+    style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:#0f172a;color:#e2e8f0;font-size:13px;text-align:right">
+  <span style="font-size:12px;color:var(--dim)">MB <span style="font-size:11px">(64–512)</span></span>
+  <button class="btn btn-sm btn-primary" onclick="log2ramSaveSize()"><i class="bi bi-floppy"></i> Salva</button>
+</div>
+<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+  <button class="btn btn-sm" id="l2rBtnSync" onclick="log2ramSync()"><i class="bi bi-arrow-repeat"></i> Sync ora</button>
+  <button class="btn btn-sm" id="l2rBtnRestart" onclick="log2ramRestart()"><i class="bi bi-arrow-clockwise"></i> Restart log2ram</button>
+  <button class="btn btn-sm" id="l2rBtnInstall" onclick="log2ramInstall()" style="display:none;background:#16a34a;color:#fff"><i class="bi bi-download"></i> Installa Log2Ram</button>
+</div>
+</div>
+
+<div class="card" style="margin-top:12px">
+<h2><i class="bi bi-graph-up" style="margin-right:8px;color:var(--accent)"></i>Performance SD — Scritture (ultimi 60 campioni)</h2>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  <button class="btn btn-sm" id="l2rTogSd"  onclick="l2rToggle('sdWrites',this)"  style="border-left:3px solid #ef4444">SD Writes MB/10s</button>
+  <button class="btn btn-sm" id="l2rTogRam" onclick="l2rToggle('ramSize',this)"   style="border-left:3px solid #22c55e">RAM Log MB</button>
+  <button class="btn btn-sm" id="l2rTogIo"  onclick="l2rToggle('ioPct',this)"     style="border-left:3px solid #eab308">I/O Time %</button>
+</div>
+<div style="position:relative;height:240px;background:#0a0f1a;border-radius:8px;border:1px solid var(--border);padding:8px">
+  <canvas id="l2rCanvas" style="width:100%;height:100%;display:block"></canvas>
+</div>
+</div>
+
+<div class="card" style="margin-top:12px">
+<h2><i class="bi bi-bar-chart-line-fill" style="margin-right:8px;color:var(--accent)"></i>Statistiche Sessione</h2>
+<div id="l2rStatsGrid" class="sysinfo-grid"></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+<h2 style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none" onclick="l2rFilesToggle(this)">
+  <span><i class="bi bi-folder2-open" style="margin-right:8px;color:var(--accent)"></i>Log in RAM <code style="font-size:12px;color:var(--dim);font-weight:400">/var/log tmpfs</code></span>
+  <span id="l2rFilesChevron" style="font-size:13px;color:var(--dim);transition:transform .2s">&#9660;</span>
+</h2>
+<div id="l2rFilesWrap" style="display:none;margin-top:12px">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+  <thead><tr style="background:#0a0f1a">
+    <th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:500;border-radius:6px 0 0 0">File</th>
+    <th style="text-align:right;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:500">Dimensione</th>
+    <th style="text-align:right;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:500;border-radius:0 6px 0 0">Modificato</th>
+  </tr></thead>
+  <tbody id="l2rFilesBody"><tr><td colspan="3" style="padding:14px 12px;color:var(--dim);text-align:center">Caricamento...</td></tr></tbody>
+</table>
+</div>
+</div>
+
+</div>
+
+<script src="/static/ace/ace.min.js"></script>
+<script src="/static/ace/mode-xml.min.js"></script>
+<script src="/static/ace/theme-tomorrow_night.min.js"></script>
+<script src="/static/panel.js"></script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<document type="doorphoneserver/xml">
+
+	<accounts>
+		<account name="doorphoneserver-community" default="true">
+			<serverandport>127.0.0.1:64738</serverandport>
+			<insecure>true</insecure>
+			<register>false</register>
+			<certificate/>
+			<channel/>
+			<ident>DoorPi</ident>
+		</account>
+	</accounts>
+
+
+	<global>
+
+		<software>
+
+			<settings>
+				<singleinstance>true</singleinstance>
+				<outputdevice>Headphone</outputdevice>
+				<outputvolcontroldevice>Headphone</outputvolcontroldevice>
+				<outputmutecontroldevice>Headphone</outputmutecontroldevice>
+				<logfilenameandpath>/home/doorphoneserver/doorphoneserver.log</logfilenameandpath>
+				<logging>fileonly</logging>
+				<loglevel>info</loglevel>
+				<logmaxsizemb>5</logmaxsizemb>
+				<logretentiondays>7</logretentiondays>
+				<cancellablestream>true</cancellablestream>
+				<streamonstart>false</streamonstart>
+				<streamafterstart>5</streamafterstart>
+				<streamsendmessage>false</streamsendmessage>
+				<txonstart>false</txonstart>
+				<txafterstart>5</txafterstart>
+				<repeattxtimes>5</repeattxtimes>
+				<repeattxdelay>1</repeattxdelay>
+				<simplexwithmute>true</simplexwithmute>
+			</settings>
+
+			<tts enabled="true">
+				<volumelevel>80</volumelevel>
+				<language>en</language>
+				<sound action="message" file="" enabled="false"/>
+				<sound action="ring" file="soundfiles/events/door_ring.wav" blocking="false" enabled="true"/>
+				<sound action="unlookdoor" file="soundfiles/events/unlock.mp3" blocking="false" enabled="true"/>
+			</tts>
+
+			<pushover enabled="true" log="false"></pushover>
+
+
+       <camera debug="false">
+        <video enabled="true">
+          <endpoint>rtsp://192.168.1.124:554/Preview_01_sub</endpoint>
+        </video>
+        <snapshot enabled="true">
+         <method>ffmpeg</method>
+         <endpoint>http://192.168.1.124/cgi-bin/api.cgi?cmd=Snap&amp;channel=0&amp;rs=abc</endpoint>
+         <maxsnapshots>100</maxsnapshots>
+         <retentiondays>30</retentiondays>
+         <dir>/home/doorphoneserver/snapshots</dir>
+        </snapshot>
+       </camera>
+
+
+			<remotecontrol>
+				<http listenport="8080" enabled="true">
+					<command action="mute" funcparamname="mute" message="Mute" enabled="true"/>
+					<command action="unmute" funcparamname="unmute" message="Unute" enabled="true"/>
+					<command action="listapi" funcparamname="" message="List API" enabled="true"/>
+					<command action="unlockdoor" funcparamname="P" message="unlockdoor" enabled="true"/>
+					<command action="powertablet_on" funcparamname="" message="powertablet_on" enabled="true"/>
+					<command action="powertablet_off" funcparamname="" message="powertablet_off" enabled="true"/>
+					<command action="sendpushovermessage" funcparamname="" message="sendpushovermessage" enabled="true"/>
+					<command action="takesnapshot" funcparamname="" message="takesnapshot" enabled="true"/>
+					<command action="reboot_server" funcparamname="" message="reboot_server" enabled="true"/>
+				</http>
+
+				<mqtt enabled="false">
+					<settings>
+            <mqtttopic>thailand/bangkok/company/doorphoneserver</mqtttopic>
+            <mqttbroker>tcp://yourserver.com:1883</mqttbroker>
+            <mqttpassword/>
+            <mqttuser/>
+            <mqttid>doorphoneserver002</mqttid>
+            <qos>0</qos>
+          </settings>
+					<commands>
+           <command action="attention" message="Attention LED" enabled="true"/>
+           <command action="relay" message="Relay Control" enabled="true"/>
+					</commands>
+				</mqtt>
+
+			</remotecontrol>
+
+
+		<tablet enabled="true">
+    <p1 kioskmode="true" hide_status_bar="true" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p1>
+    <p2 kioskmode="true"  hide_status_bar="true"  miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p2>
+    <p3 kioskmode="false" hide_status_bar="false" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p3>
+    <p4 kioskmode="true" hide_status_bar="true" miclevel="140" speakerlevel="1" screenbrightnesslevel="100"></p4>
+    </tablet>
+
+		</software>
+
+
+		<hardware>
+
+			<voiceactivitytimermsecs>200</voiceactivitytimermsecs>
+
+			<heartbeat enabled="true">
+				<heartbeatledpin/>
+				<periodmsecs>2000</periodmsecs>
+				<ledonmsecs>1000</ledonmsecs>
+				<ledoffmsecs>1010</ledoffmsecs>
+			</heartbeat>
+
+
+			<io>
+				<pulse leadingmsecs="1000" pulsemsecs="1000" trailingmsecs="1000"/>
+
+				<pins enabled="true">
+					<!-- INPUT -->
+					<pin name="p1" direction="input" device="pushbutton" pinno="22" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P1"/>
+					<pin name="p2" direction="input" device="pushbutton" pinno="27" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P2"/>
+					<pin name="p3" direction="input" device="pushbutton" pinno="17" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P3"/>
+					<pin name="on_off" direction="input" device="pushbutton" pinno="18" type="gpio" chipid="0" enabled="true" log="false" desc="Accensione Spegnimento"/>
+					<!-- INPUT -->
+
+					<!-- OUTPUT -->
+					<pin name="heartbeat" direction="output" device="led/relay" pinno="26" type="gpio" chipid="0" enabled="true" log="false" desc="HeartBeat LED"/>
+					<pin name="unlockdoor" direction="output" device="led/relay" pinno="5" type="gpio" chipid="0" enabled="true" log="false" desc="Unlock Main Door"/>
+					<pin name="power_tablet" direction="output" device="led/relay" pinno="19" type="gpio" chipid="0" enabled="true" log="false" desc="Power Tablet"/>
+					<pin name="led_power" direction="output" device="led/relay" pinno="23" type="gpio" chipid="0" enabled="false" log="false" desc="Power Led"/>
+					<pin name="fan" direction="output" device="led/relay" pinno="16" type="gpio" chipid="0" enabled="false" log="false" desc="Cooler Fan"/>
+					<!-- OUTPUT -->
+				</pins>
+
+				<sonoff enabled="false">
+					<device name="device1" type="tasmota" url="http://192.168.1.25" enabled="false"  log="false" desc="Light Main Door" status=""/>
+					<device name="device3" type="tasmota" url="http://192.168.1.30" enabled="false"  log="false" desc="Light Courtyard" status=""/>
+					<device name="device2" type="tasmota" url="http://192.168.1.28" enabled="false" log="false" desc="Star Lights" status=""/>
+				</sonoff>
+
+			</io>
+
+		</hardware>
+
+	</global>
+
+</document>
