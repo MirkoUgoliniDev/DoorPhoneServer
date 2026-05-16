@@ -22,7 +22,7 @@ class StepMumbleServer(Step):
             # Passa MUMBLE_PASSWORD come variabile d'ambiente allo script bash
             # (lo script NON usa read interattivo — legge solo da env)
             mumble_env = {"MUMBLE_PASSWORD": config.get("env_mumble_password", "")}
-            ok, _ = runner.run(["bash", str(script)], sudo=True, env=mumble_env)
+            ok, _ = runner.run(["bash", str(script)], user="root", env=mumble_env)
             if not ok and not runner.dry_run:
                 runner.log("  ⚠ setup_mumble.sh ha avuto errori — il servizio potrebbe non partire")
         else:

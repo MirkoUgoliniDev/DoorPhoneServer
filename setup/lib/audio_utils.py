@@ -80,7 +80,6 @@ def best_card_pair() -> Tuple[Optional[AudioCard], Optional[AudioCard]]:
         return None, None
 
     cap_indices = {c.index for c in cap_cards}
-    play_indices = {c.index for c in play_cards}
 
     # Prima scelta: scheda presente in entrambe le liste (full-duplex), la meglio ranked
     for pc in play_cards:

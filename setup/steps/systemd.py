@@ -52,7 +52,7 @@ class StepSystemdService(Step):
         # --- Crontab (riavvii notturni + restart tablet) ---
         cron_script = REPO_ROOT / "setup" / "scripts" / "setup_crontab.sh"
         if cron_script.exists():
-            runner.run(["sudo", "-u", TK_USER, "bash", str(cron_script)])
+            runner.run(["bash", str(cron_script)], user=TK_USER)
             runner.log("  ✓ Crontab installato")
         else:
             runner.log("  ⚠ setup_crontab.sh non trovato, crontab non installato")
