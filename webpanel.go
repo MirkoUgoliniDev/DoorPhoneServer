@@ -141,6 +141,10 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 
 	// System info
 	mux.HandleFunc("/panel/api/sysinfo", b.handleSysInfo)
+	// ESP32-S3 control endpoints
+	mux.HandleFunc("/panel/api/esp32/status", b.handleESP32Status)
+	mux.HandleFunc("/panel/api/esp32/fan", b.handleESP32Fan)
+	mux.HandleFunc("/panel/api/esp32/door", b.handleESP32Door)
 
 	apkPath := filepath.Join(filepath.Dir(ConfigXMLFile), "apk")
 	mux.Handle("/apk/", http.StripPrefix("/apk/", http.FileServer(http.Dir(apkPath))))
@@ -3889,4 +3893,72 @@ func (b *DoorPhoneServer) handleSysInfo(w http.ResponseWriter, r *http.Request) 
 	}
 
 	json.NewEncoder(w).Encode(info)
+}
+
+// handleESP32Status restituisce lo stato corrente del bridge ESP32-S3:
+// connessione, valori pin GPIO, log tessere.
+func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	type statusResp struct {
+		Connected bool              `json:"connected"`
+		Pins      map[string]int    `json:"pins"`
+		CardLog   []ESP32CardLog    `json:"card_log"`
+	}
+
+	resp := statusResp{
+		Pins:    make(map[string]int),
+		CardLog: []ESP32CardLog{},
+	}
+	if b.USBBridge != nil {
+		resp.Connected, resp.Pins, resp.CardLog = b.USBBridge.State.snapshot()
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleESP32Fan imposta la velocità ventola via PWM sull'ESP32-S3.
+// POST con campo "duty" (0-100). Restituisce errore se ESP32-S3 non connesso.
+func (b *DoorPhoneServer) handleESP32Fan(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dutyStr := r.FormValue("duty")
+	duty, err := strconv.Atoi(dutyStr)
+	if err != nil || duty < 0 || duty > 100 {
+		http.Error(w, "duty deve essere 0-100", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+		return
+	}
+	b.USBBridge.Send("PWM fan " + strconv.Itoa(duty) + "\n")
+	log.Printf("[PANEL] ESP32 fan duty=%d%%", duty)
+	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+// handleESP32Door invia un impulso di apertura portone all'ESP32-S3.
+// POST senza parametri richiesti. Restituisce errore se ESP32-S3 non connesso.
+func (b *DoorPhoneServer) handleESP32Door(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+		return
+	}
+	b.USBBridge.Send("SET unlockdoor pulse\n")
+	log.Printf("[PANEL] ESP32 door unlock pulse inviato")
+	fmt.Fprintf(w, `{"ok":true}`)
 }

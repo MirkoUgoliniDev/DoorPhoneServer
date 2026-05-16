@@ -62,6 +62,7 @@ type DoorPhoneServer struct {
 	IsTransmitting  atomic.Bool
 	IsPlayStream    bool
 	GPIOEnabled     bool
+	USBBridge       *USBBridge
 }
 
 // ChannelsListStruct contiene le informazioni di un canale Mumble per la visualizzazione in lista.
@@ -156,6 +157,11 @@ func Init(file string, ServerIndex string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	SetGlobalContext(ctx, cancel)
+
+	usbBridge := NewUSBBridge(ctx)
+	b.USBBridge = usbBridge
+	go NewGPIOUsb(usbBridge).Run(ctx)
+	go NewSmartcard(usbBridge).Run(ctx)
 
 	if Config.Global.Software.RemoteControl.MQTT.Enabled {
 		log.Printf("info: Attempting to Contact MQTT Server")
