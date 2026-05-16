@@ -30,8 +30,8 @@ Pi  ──USB──►  ESP32-S3 riceve:
 
 | Componente | Tecnologia | Motivo |
 |------------|-----------|--------|
-| Comunicazione USB | USB CDC ACM | ESP32-S3 (ESP-IDF TinyUSB) appare come `/dev/ttyACM0` — nessun driver |
-| Symlink stabile | udev rule | `/dev/gpio-esp32` — indipendente dall'ordine di boot |
+| Comunicazione USB | USB CDC ACM | ESP32-S3 (ESP-IDF TinyUSB) appare come `/dev/ttyACM*` — nessun driver |
+| Symlink stabile | udev rule | `/dev/esp32` — indipendente dall'ordine di boot |
 | Libreria seriale | `go.bug.st/serial v1.6.4` | Cross-platform, attivamente mantenuta, zero dipendenze C |
 | Protocollo | Testo ASCII `\n`-delimited | Leggibile a occhio, debug con qualsiasi terminale seriale |
 | Firmware ESP32-S3 | ESP-IDF v5.x/6.x, C | Toolchain ufficiale Espressif — vedi documento correlato |

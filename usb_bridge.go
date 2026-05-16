@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	usbSerialPath    = "/dev/gpio-esp32"
+	usbSerialPath    = "/dev/esp32"
 	usbBaudRate      = 115200
 	usbPingInterval  = 5 * time.Second
 	usbRetryDelay    = 2 * time.Second // breve per rilevare hot-plug rapidamente

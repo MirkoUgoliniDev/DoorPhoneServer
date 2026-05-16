@@ -25,7 +25,7 @@ L'ESP32-S3 è il **layer hardware**: gestisce tutti i circuiti fisici e i protoc
 
 | Componente | ESP-IDF API | Note |
 |------------|------------|------|
-| USB CDC ACM | `tinyusb` + `tusb_cdc_acm` | Appare come `/dev/ttyACM0` su Linux |
+| USB CDC ACM | `tinyusb` + `tusb_cdc_acm` | Appare come `/dev/ttyACM*` su Linux, symlink stabile `/dev/esp32` via udev |
 | GPIO interrupt | `driver/gpio.h` | `gpio_isr_handler_add()` |
 | Timer debounce | `esp_timer.h` | One-shot timer per pin |
 | PWM ventola | `driver/ledc.h` | LEDC timer 25kHz |
