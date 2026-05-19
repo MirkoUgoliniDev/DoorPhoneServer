@@ -1,29 +1,28 @@
-sudo tee /home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect/talkkonnect.code-workspace << 'EOF'
 {
     "remoteAuthority": "ssh-remote+pi@192.168.1.151",
     "folders": [
         {
             "name": "DoorPhoneServer",
-            "uri": "vscode-remote://ssh-remote+pi@192.168.1.151/home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect"
+            "uri": "vscode-remote://ssh-remote+pi@192.168.1.151/home/doorphoneserver"
         }
     ],
     "settings": {
         "workbench.colorCustomizations": {
-            "statusBar.background": "#1A7A1A",
+            "statusBar.background": "#283AFF",
             "statusBar.noFolderBackground": "#8a008f",
             "statusBar.debuggingBackground": "#8a008f",
             "statusBar.foreground": "#ffffff",
             "statusBar.debuggingForeground": "#ffffff"
         },
         "actionButtons": {
-            "defaultColor": "#1A7A1A",
+            "defaultColor": "#8a008f",
             "loadNpmCommands": false,
             "commands": [
                 {
                     "name": "$(gear) Build DoorPhoneServer",
                     "color": "#FFFFFF",
-                    "command": "cd /home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect && ./tkbuild.sh",
-                    "tooltip": "Esegui il task 'BuildDoorPhoneServer'",
+                    "command": "cd /home/doorphoneserver && ./setup/scripts/build.sh",
+                    "tooltip": "Compila DoorPhoneServer",
                     "singleInstance": true
                 },
                 {
@@ -75,4 +74,3 @@ sudo tee /home/talkkonnect/gocode/src/github.com/talkkonnect/talkkonnect/talkkon
         ]
     }
 }
-EOF

@@ -130,7 +130,26 @@ Clicca **Avvia Installazione** e monitora il progresso in tempo reale.
 
 ---
 
-## Passo 7 — Riavvio finale
+## Passo 7 — Regole sudoers (build senza password)
+
+Il build script e i bottoni VSCode usano `sudo` per fermare il servizio e ripulire i log.
+Installa le regole che permettono all'utente `pi` di farlo senza digitare la password ogni volta:
+
+```bash
+sudo bash setup/scripts/setup_sudoers.sh
+```
+
+Permessi concessi (solo questi, nient'altro):
+
+| Comando | Motivo |
+|---|---|
+| `rm /var/log/doorphoneserver.log` | il log è di root quando il servizio gira come root |
+| `systemctl stop/start/restart doorphoneserver` | gestione servizio |
+| `killall -s 15 doorphoneserver` | fallback nel build script |
+
+---
+
+## Passo 8 — Riavvio finale
 
 Al termine del wizard:
 
@@ -187,7 +206,7 @@ python3 setup/wizard.py --dry-run --tui
 ├── openal/alsoft.conf           ← OpenAL
 ├── mumble-server.ini            ← server Mumble
 ├── systemd/system/doorphoneserver.service
-├── sudoers.d/doorphoneserver-panel
+├── sudoers.d/doorphoneserver          ← build/service senza password (Passo 7)
 └── log2ram.conf                 ← se installato
 
 /boot/firmware/config.txt        ← audio onboard disabilitato (Bookworm+)
@@ -217,10 +236,13 @@ Collega la scheda USB **prima** di avviare il wizard, oppure riconfigura dopo:
 python3 setup/wizard.py --audio-setup
 ```
 
-### Errore "permission denied" durante il build
+### Il build chiede la password sudo
 
-Assicurati di lanciare il wizard come utente normale (non root).
-Il wizard usa `sudo` solo dove necessario.
+Esegui il Passo 7 per installare le regole sudoers:
+
+```bash
+sudo bash setup/scripts/setup_sudoers.sh
+```
 
 ### Servizio non parte dopo il riavvio
 
