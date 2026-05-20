@@ -772,6 +772,8 @@ function loadAudioInfo() {
         ...data.cap.filter(c => c.mode === 'capture')
       ];
       renderSliders('playVolumes', merged);
+      if (data.agc !== undefined)
+        document.getElementById('agcToggle').checked = data.agc;
     })
     .catch(() => audioLog('Errore caricamento controlli audio', 'var(--error)'));
 }
@@ -1232,6 +1234,12 @@ def audio_info():
         info = _amixer_get(cap_card, c, prefer_capture=True)
         if info["volume"] is not None:
             result["cap"].append({"name": c, "card": cap_card, **info})
+    try:
+        r = subprocess.run(["amixer", "-c", str(cap_card), "sget", "Auto Gain Control"],
+                           capture_output=True, text=True, timeout=5)
+        result["agc"] = "[on]" in r.stdout
+    except Exception:
+        result["agc"] = False
     return jsonify(result)
 
 
