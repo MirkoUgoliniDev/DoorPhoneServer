@@ -947,7 +947,7 @@ def main():
 
     if args.web:
         from webui import run_webui
-        run_webui(port=args.port)
+        run_webui(port=args.port, dry_run=args.dry_run)
         return
 
     setup_file_logging()
