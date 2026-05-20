@@ -843,7 +843,6 @@ function _setRecBtns(recording) {
 }
 
 function recStart() {
-  if (_vuSource) { stopVU(); }
   const capCard = parseInt(document.getElementById('capCard').value);
   audioLog('⏺ Registrazione in corso...');
   fetch('/audio/rec_start', {
