@@ -23,8 +23,8 @@ from lib.step_base import Step
 def build_steps() -> List[Step]:
     return [
         StepSystemCheck(),
-        StepHostname(),
         StepEnvConfig(),
+        StepHostname(),
         StepCreateUser(),
         StepPackages(),
         StepGolang(),

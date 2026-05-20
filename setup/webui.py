@@ -106,6 +106,10 @@ HTML = r"""<!DOCTYPE html>
   .log-step { color:var(--accent); font-weight:bold; }
   .log-muted{ color:var(--muted); }
   .step-icon{ width:22px; text-align:center; display:inline-block; }
+  .step-label[data-section]{ cursor:pointer; }
+  .step-label[data-section]:hover{ color:var(--accent) !important; text-decoration:underline; }
+  @keyframes sec-flash { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 3px var(--accent)} }
+  .sec-highlight{ animation:sec-flash .5s ease 2; }
   .progress-bar { transition:width .4s ease; }
   input[type=text],input[type=number],input[type=password],input[type=email],select {
     background:#1e1e2e !important; border:1px solid #45475a; border-radius:.4rem;
@@ -154,7 +158,8 @@ HTML = r"""<!DOCTYPE html>
     <li id="step-{{ loop.index0 }}" class="flex items-center gap-2 text-sm px-2 py-1 rounded"
         style="color:#cdd6f4">
       <span class="step-icon" id="icon-{{ loop.index0 }}" style="color:var(--muted)">{{ s.icon }}</span>
-      <span>{{ s.name }}</span>
+      <span class="step-label" data-step="{{ loop.index0 }}"
+            onclick="stepLabelClick('{{ s.name }}')">{{ s.name }}</span>
       {% if s.optional %}<span class="badge" style="background:#45475a;color:var(--muted)">opt</span>{% endif %}
     </li>
     {% endfor %}
@@ -207,7 +212,7 @@ HTML = r"""<!DOCTYPE html>
   <div id="configSection" class="flex flex-col gap-4">
 
     <!-- Blocco: Credenziali -->
-    <div class="card p-5">
+    <div id="sec-credenziali" class="card p-5">
       <div class="flex items-center justify-between mb-3 cursor-pointer" onclick="toggleEnv()">
         <span class="text-sm font-bold tracking-widest" style="color:var(--muted)">🔑 CREDENZIALI (.env)</span>
         <span id="envToggleIcon" style="color:var(--muted)">▼</span>
@@ -293,7 +298,7 @@ HTML = r"""<!DOCTYPE html>
     </div>
 
     <!-- Blocco: Sistema -->
-    <div class="card p-5 flex flex-col gap-4">
+    <div id="sec-hostname" class="card p-5 flex flex-col gap-4">
       <div>
         <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">HOSTNAME</label>
         <input type="text" id="hostname" value="{{ default_hostname }}" placeholder="doorphoneserver">
@@ -302,7 +307,7 @@ HTML = r"""<!DOCTYPE html>
     </div>
 
     <!-- Blocco: Log2Ram -->
-    <div class="card p-5 flex flex-col gap-3">
+    <div id="sec-log2ram" class="card p-5 flex flex-col gap-3">
       <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">💾 LOG2RAM</div>
       <div class="flex items-center gap-3">
         <label class="toggle"><input type="checkbox" id="log2ram" checked onchange="toggleLog2RamParams()"><span class="slider"></span></label>
@@ -342,7 +347,7 @@ HTML = r"""<!DOCTYPE html>
     </div>
 
     <!-- Blocco: Audio -->
-    <div class="card p-5 flex flex-col gap-3">
+    <div id="sec-audio" class="card p-5 flex flex-col gap-3">
       <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">🔊 AUDIO</div>
       <div>
         <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
@@ -377,7 +382,7 @@ HTML = r"""<!DOCTYPE html>
 
 
   <!-- Blocco: Opzioni aggiuntive -->
-  <div class="card p-5 flex flex-col gap-3">
+  <div id="sec-opzioni" class="card p-5 flex flex-col gap-3">
     <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">⚙️ OPZIONI AGGIUNTIVE</div>
     <div class="flex items-center gap-3">
       <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
@@ -565,7 +570,9 @@ function onDryRunToggle() {
     badge.textContent = 'REALE';
     badge.style.cssText = 'background:#1a3300;color:var(--success);border:1px solid var(--success)';
   }
+  updateStepLabels();
 }
+document.addEventListener('DOMContentLoaded', updateStepLabels);
 
 const ICON_COLORS = {
   PENDING: 'var(--muted)',
@@ -686,6 +693,43 @@ function abortInstall() {
   fetch('/abort', {method:'POST'});
   document.getElementById('abortBtn').disabled = true;
   document.getElementById('statusText').textContent = 'Interruzione in corso...';
+}
+
+const STEP_SECTIONS = {
+  'Credenziali .env':        'sec-credenziali',
+  'Hostname':                'sec-hostname',
+  'Configurazione Audio':    'sec-audio',
+  'Log2Ram':                 'sec-log2ram',
+  'VSCode Server (opzionale)': 'sec-opzioni',
+};
+
+function stepLabelClick(name) {
+  if (!DRY_RUN) return;
+  const secId = STEP_SECTIONS[name];
+  if (!secId) return;
+  const el = document.getElementById(secId);
+  if (!el) return;
+  // apri le credenziali se collassate
+  if (secId === 'sec-credenziali') {
+    const s = document.getElementById('envSection');
+    if (s && s.style.display === 'none') toggleEnv();
+  }
+  el.scrollIntoView({behavior:'smooth', block:'start'});
+  el.classList.remove('sec-highlight');
+  void el.offsetWidth;
+  el.classList.add('sec-highlight');
+  setTimeout(() => el.classList.remove('sec-highlight'), 1100);
+}
+
+// Aggiorna attributo data-section sui label in base a DRY_RUN
+function updateStepLabels() {
+  document.querySelectorAll('.step-label').forEach(el => {
+    const name = el.textContent.trim();
+    if (STEP_SECTIONS[name]) {
+      if (DRY_RUN) el.setAttribute('data-section', STEP_SECTIONS[name]);
+      else el.removeAttribute('data-section');
+    }
+  });
 }
 
 function toggleLog2RamParams() {
