@@ -112,6 +112,10 @@ HTML = r"""<!DOCTYPE html>
   .step-desc.visible{ display:block; }
   @keyframes sec-flash { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 3px var(--accent)} }
   .sec-highlight{ animation:sec-flash .5s ease 2; }
+  .card { border: 1px solid transparent; }
+  .card-running { border-color:var(--accent) !important; }
+  .card-done    { border-color:var(--success) !important; }
+  .card-failed  { border-color:var(--error) !important; }
   .progress-bar { transition:width .4s ease; }
   input[type=text],input[type=number],input[type=password],input[type=email],select {
     background:#1e1e2e !important; border:1px solid #45475a; border-radius:.4rem;
@@ -179,7 +183,7 @@ HTML = r"""<!DOCTYPE html>
 <!-- MAIN -->
 <main class="flex-1 p-6 flex flex-col gap-4 overflow-y-auto">
 
-  <!-- Toggle DRY-RUN -->
+  <!-- DRY-RUN toggle -->
   <div id="dryRunBar" class="card px-4 py-3 flex items-center justify-between gap-4">
     <div class="flex items-center gap-3">
       <label class="toggle">
@@ -200,32 +204,47 @@ HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 id="curStepTitle" class="text-2xl font-bold" style="color:var(--accent)">
-        Configura e avvia
-      </h1>
-      <p id="curStepDesc" class="text-sm mt-1" style="color:var(--muted)">
-        Compila le opzioni e clicca Avvia Installazione
-      </p>
-    </div>
-    <div id="statusBadge" class="hidden badge text-sm px-3 py-1"></div>
+  <!-- Buttons + status -->
+  <div class="flex items-center gap-3 flex-wrap">
+    <button id="startBtn" class="btn-primary" onclick="startInstall()">▶&nbsp; Avvia Installazione</button>
+    <button id="abortBtn" class="btn-danger" disabled onclick="abortInstall()">■&nbsp; Interrompi</button>
+    <span id="statusText" class="text-sm ml-4" style="color:var(--muted)"></span>
   </div>
 
-  <!-- Config form -->
-  <div id="configSection" class="flex flex-col gap-4">
+  <!-- Progress bar -->
+  <div class="card p-4">
+    <div class="flex justify-between text-xs mb-2" style="color:var(--muted)">
+      <span id="progressLabel">In attesa</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="w-full rounded-full h-2" style="background:#45475a">
+      <div id="progressBar" class="progress-bar h-2 rounded-full" style="width:0%;background:var(--accent)"></div>
+    </div>
+  </div>
 
-    <!-- Blocco: Credenziali -->
-    <div id="sec-credenziali" class="card p-5">
-      <div class="flex items-center justify-between mb-3 cursor-pointer" onclick="toggleEnv()">
-        <span class="text-sm font-bold tracking-widest" style="color:var(--muted)">🔑 CREDENZIALI (.env)</span>
-        <span id="envToggleIcon" style="color:var(--muted)">▼</span>
+  <!-- Step cards -->
+  <div id="configSection" class="flex flex-col gap-3">
+    {% for s in steps %}
+    <div id="step-card-{{ loop.index0 }}" class="card p-4 flex flex-col gap-0">
+
+      <!-- Header always visible -->
+      <div class="flex items-center gap-3">
+        <span id="icon-{{ loop.index0 }}" style="color:var(--muted);font-size:1.1rem;width:1.5rem;text-align:center;flex-shrink:0">{{ s.icon }}</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-sm">{{ s.name }}</span>
+            {% if s.optional %}<span class="badge" style="background:#45475a;color:var(--muted)">opt</span>{% endif %}
+            <span id="card-badge-{{ loop.index0 }}" class="badge text-xs" style="display:none"></span>
+          </div>
+          <p class="text-xs mt-0.5 truncate" style="color:var(--muted)" title="{{ s.description }}">{{ s.description }}</p>
+        </div>
       </div>
-      <div id="envSection" class="flex flex-col gap-4">
 
+      <!-- Config section (solo per step configurabili) -->
+      {% if s.name == 'Credenziali .env' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
         <!-- Mumble -->
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2 mb-3">
           <span class="text-xs font-bold" style="color:var(--accent)">MUMBLE SERVER</span>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
             <div>
@@ -236,17 +255,14 @@ HTML = r"""<!DOCTYPE html>
               <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Password</label>
               <div style="position:relative;width:100%">
                 <input type="password" id="env_mumble_password" placeholder="password server Mumble">
-                <button type="button" onclick="togglePwd('env_mumble_password')"
-                  style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+                <button type="button" onclick="togglePwd('env_mumble_password')" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
               </div>
             </div>
           </div>
         </div>
-
-        <hr style="border-color:#313244">
-
+        <hr style="border-color:#313244;margin-bottom:.75rem">
         <!-- Camera IP -->
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2 mb-3">
           <span class="text-xs font-bold" style="color:var(--accent)">CAMERA IP</span>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
             <div>
@@ -257,17 +273,14 @@ HTML = r"""<!DOCTYPE html>
               <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Password</label>
               <div style="position:relative;width:100%">
                 <input type="password" id="env_camera_password" placeholder="password camera IP">
-                <button type="button" onclick="togglePwd('env_camera_password')"
-                  style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+                <button type="button" onclick="togglePwd('env_camera_password')" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
               </div>
             </div>
           </div>
         </div>
-
-        <hr style="border-color:#313244">
-
+        <hr style="border-color:#313244;margin-bottom:.75rem">
         <!-- Pushover -->
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2 mb-3">
           <span class="text-xs font-bold" style="color:var(--accent)">PUSHOVER</span>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
             <div>
@@ -280,156 +293,106 @@ HTML = r"""<!DOCTYPE html>
             </div>
           </div>
         </div>
-
-        <hr style="border-color:#313244">
-
+        <hr style="border-color:#313244;margin-bottom:.75rem">
         <!-- OpenRouter -->
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2 mb-3">
           <span class="text-xs font-bold" style="color:var(--accent)">OPENROUTER</span>
           <div style="position:relative;width:100%">
             <input type="password" id="env_openrouter_key" placeholder="sk-or-v1-...">
-            <button type="button" onclick="togglePwd('env_openrouter_key')"
-              style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+            <button type="button" onclick="togglePwd('env_openrouter_key')" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
           </div>
         </div>
-
-        <div class="flex items-center gap-3 mt-1">
-          <button class="btn-primary" style="font-size:.85rem;padding:.4rem 1rem" onclick="saveEnv()">
-            💾 Salva .env ora
-          </button>
+        <div class="flex items-center gap-3">
+          <button class="btn-primary" style="font-size:.85rem;padding:.4rem 1rem" onclick="saveEnv()">💾 Salva .env ora</button>
           <span id="envSaveMsg" class="text-xs" style="color:var(--success)"></span>
         </div>
       </div>
-    </div>
 
-    <!-- Blocco: Sistema -->
-    <div id="sec-hostname" class="card p-5 flex flex-col gap-4">
-      <div>
+      {% elif s.name == 'Hostname' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
         <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">HOSTNAME</label>
         <input type="text" id="hostname" value="{{ default_hostname }}" placeholder="doorphoneserver">
         <p class="text-xs mt-1" style="color:var(--muted)">Nome del dispositivo in rete</p>
       </div>
-    </div>
 
-    <!-- Blocco: Log2Ram -->
-    <div id="sec-log2ram" class="card p-5 flex flex-col gap-3">
-      <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">💾 LOG2RAM</div>
-      <div class="flex items-center gap-3">
-        <label class="toggle"><input type="checkbox" id="log2ram" checked onchange="toggleLog2RamParams()"><span class="slider"></span></label>
+      {% elif s.name == 'Configurazione Audio' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244;display:grid;grid-template-columns:1fr 1fr;gap:.75rem;align-items:end">
         <div>
-          <span class="text-sm font-medium">Installa Log2Ram</span>
-          <span class="text-xs block" style="color:var(--muted)">Protegge la microSD tenendo i log in RAM</span>
+          <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
+          {% if play_cards %}
+          <select id="playCard">{% for c in play_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}</select>
+          {% else %}
+          <input type="number" id="playCard" value="1" min="0" max="9">
+          {% endif %}
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO INPUT (card n.)</label>
+          {% if cap_cards %}
+          <select id="capCard">{% for c in cap_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}</select>
+          {% else %}
+          <input type="number" id="capCard" value="1" min="0" max="9">
+          {% endif %}
+        </div>
+        <div class="col-span-2 mt-1" style="grid-column:1/-1">
+          <button onclick="openAudioModal()" class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">🔊 Test Audio &amp; Volumi</button>
         </div>
       </div>
-      <div id="log2ramParams" class="flex flex-col gap-3 mt-1">
-        <div>
-          <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">SIZE — Dimensione RAM per i log</label>
-          <input type="text" id="log2ram_size" value="128M" placeholder="es. 128M">
-        </div>
+
+      {% elif s.name == 'Log2Ram' %}
+      <div class="step-config mt-3 pt-3 flex flex-col gap-3" style="border-top:1px solid #313244">
         <div class="flex items-center gap-3">
-          <label class="toggle"><input type="checkbox" id="log2ram_zl2r" onchange="toggleZramParams()"><span class="slider"></span></label>
+          <label class="toggle"><input type="checkbox" id="log2ram" checked onchange="toggleLog2RamParams()"><span class="slider"></span></label>
+          <span class="text-sm">Installa Log2Ram</span>
+        </div>
+        <div id="log2ramParams" class="flex flex-col gap-3">
           <div>
-            <span class="text-sm">ZL2R — Usa zram (compressione in RAM)</span>
-            <span class="text-xs block" style="color:var(--muted)">Risparmia RAM comprimendo i log</span>
+            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">SIZE — Dimensione RAM per i log</label>
+            <input type="text" id="log2ram_size" value="128M" placeholder="es. 128M">
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="toggle"><input type="checkbox" id="log2ram_zl2r" onchange="toggleZramParams()"><span class="slider"></span></label>
+            <div>
+              <span class="text-sm">ZL2R — Usa zram</span>
+              <span class="text-xs block" style="color:var(--muted)">Compressione log in RAM</span>
+            </div>
+          </div>
+          <div id="zramParams" style="display:none">
+            <div class="mb-2">
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">COMP_ALG</label>
+              <select id="log2ram_comp_alg">
+                <option value="lz4">lz4 (più veloce)</option>
+                <option value="lzo">lzo</option>
+                <option value="zstd">zstd (più compresso)</option>
+                <option value="zlib">zlib</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">LOG_DISK_SIZE</label>
+              <input type="text" id="log2ram_log_disk_size" value="256M" placeholder="es. 256M">
+            </div>
           </div>
         </div>
-        <div id="zramParams" class="flex flex-col gap-3" style="display:none!important">
+      </div>
+
+      {% elif s.name == 'VSCode Server (opzionale)' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div class="flex items-center gap-3">
+          <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
           <div>
-            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">COMP_ALG — Algoritmo compressione</label>
-            <select id="log2ram_comp_alg">
-              <option value="lz4">lz4 (più veloce, meno compresso)</option>
-              <option value="lzo">lzo</option>
-              <option value="zstd">zstd (più compresso, più CPU)</option>
-              <option value="zlib">zlib (deflate)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">LOG_DISK_SIZE — Dimensione disco zram</label>
-            <input type="text" id="log2ram_log_disk_size" value="256M" placeholder="es. 256M">
+            <span class="text-sm">Installa code-server</span>
+            <span class="text-xs block" style="color:var(--muted)">VSCode nel browser (porta 8080)</span>
           </div>
         </div>
       </div>
-    </div>
+      {% endif %}
 
-    <!-- Blocco: Audio -->
-    <div id="sec-audio" class="card p-5 flex flex-col gap-3">
-      <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">🔊 AUDIO</div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
-        {% if play_cards %}
-        <select id="playCard">
-          {% for c in play_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}
-        </select>
-        {% else %}
-        <input type="number" id="playCard" value="1" min="0" max="9">
-        <p class="text-xs mt-1" style="color:var(--muted)">Auto-rilevata dopo installazione pacchetti</p>
-        {% endif %}
+      <!-- Log area (hidden, shown during/after execution) -->
+      <div id="card-log-{{ loop.index0 }}" style="display:none;margin-top:.75rem">
+        <div class="log-box" id="card-logbox-{{ loop.index0 }}" style="max-height:180px;font-size:.75rem"></div>
       </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO INPUT (card n.)</label>
-        {% if cap_cards %}
-        <select id="capCard">
-          {% for c in cap_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}
-        </select>
-        {% else %}
-        <input type="number" id="capCard" value="1" min="0" max="9">
-        {% endif %}
-      </div>
-      <div>
-        <button onclick="openAudioModal()"
-                class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">
-          🔊 Test Audio &amp; Volumi
-        </button>
-      </div>
+
     </div>
-
-  </div>
-
-
-  <!-- Blocco: Opzioni aggiuntive -->
-  <div id="sec-opzioni" class="card p-5 flex flex-col gap-3">
-    <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">⚙️ OPZIONI AGGIUNTIVE</div>
-    <div class="flex items-center gap-3">
-      <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
-      <div>
-        <span class="text-sm">code-server</span>
-        <span class="text-xs block" style="color:var(--muted)">VSCode nel browser (porta 8080) — opzionale</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Progress -->
-  <div class="card p-4">
-    <div class="flex justify-between text-xs mb-2" style="color:var(--muted)">
-      <span id="progressLabel">In attesa</span>
-      <span id="progressPct">0%</span>
-    </div>
-    <div class="w-full rounded-full h-2" style="background:#45475a">
-      <div id="progressBar" class="progress-bar h-2 rounded-full" style="width:0%;background:var(--accent)"></div>
-    </div>
-  </div>
-
-  <!-- Log -->
-  <div class="card p-4 flex flex-col gap-2 flex-1">
-    <div class="flex items-center justify-between">
-      <span class="text-xs font-bold tracking-widest" style="color:var(--muted)">LOG</span>
-      <button onclick="document.getElementById('logBox').innerHTML=''"
-              class="text-xs px-2 py-0.5 rounded" style="background:#45475a;color:var(--muted)">
-        Pulisci
-      </button>
-    </div>
-    <div id="logBox" class="log-box flex-1"></div>
-  </div>
-
-  <!-- Buttons -->
-  <div class="flex items-center gap-3 flex-wrap">
-    <button id="startBtn" class="btn-primary" onclick="startInstall()">
-      ▶&nbsp; Avvia Installazione
-    </button>
-    <button id="abortBtn" class="btn-danger" disabled onclick="abortInstall()">
-      ■&nbsp; Interrompi
-    </button>
-    <span id="statusText" class="text-sm ml-4" style="color:var(--muted)"></span>
+    {% endfor %}
   </div>
 
 </main>
@@ -559,6 +522,7 @@ HTML = r"""<!DOCTYPE html>
 <script>
 const N_STEPS = {{ n_steps }};
 let DRY_RUN = true;  // default sicuro: l'utente deve disattivarlo per installare davvero
+let currentStepIdx = -1;
 let evtSource = null;
 
 function onDryRunToggle() {
@@ -590,8 +554,11 @@ const ICONS = {
   PENDING: '○', RUNNING: '◎', DONE: '✓', FAILED: '✗', SKIPPED: '⊘'
 };
 
-function appendLog(msg) {
-  const box = document.getElementById('logBox');
+function appendCardLog(idx, msg) {
+  const logDiv = document.getElementById('card-log-' + idx);
+  const logBox = document.getElementById('card-logbox-' + idx);
+  if (!logDiv || !logBox) return;
+  logDiv.style.display = '';
   const span = document.createElement('span');
   let cls = '';
   if (msg.includes('[DRY-RUN]')) cls = 'log-dry';
@@ -600,8 +567,12 @@ function appendLog(msg) {
   else if (msg.includes('  $')) cls = 'log-muted';
   if (cls) span.className = cls;
   span.textContent = msg + '\n';
-  box.appendChild(span);
-  box.scrollTop = box.scrollHeight;
+  logBox.appendChild(span);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function appendLog(msg) {
+  if (currentStepIdx >= 0) appendCardLog(currentStepIdx, msg);
 }
 
 function setProgress(idx, total) {
@@ -645,16 +616,44 @@ function startInstall() {
       if (ev.type === 'log') {
         appendLog(ev.msg);
       } else if (ev.type === 'step') {
+        // Update sidebar icon
         const icon = document.getElementById('icon-' + ev.idx);
         if (icon) {
           icon.textContent = ICONS[ev.status] || '○';
           icon.style.color = ICON_COLORS[ev.status] || 'var(--muted)';
         }
-        if (ev.name) {
-          document.getElementById('curStepTitle').textContent = ev.name;
+        // Update card badge
+        const cardBadge = document.getElementById('card-badge-' + ev.idx);
+        if (cardBadge) {
+          const badgeColors = {
+            RUNNING: {bg:'var(--run)',   color:'#1e1e2e'},
+            DONE:    {bg:'var(--success)',color:'#1e1e2e'},
+            SKIPPED: {bg:'#45475a',      color:'var(--muted)'},
+            FAILED:  {bg:'var(--error)', color:'#1e1e2e'},
+          };
+          const bc = badgeColors[ev.status];
+          if (bc) {
+            cardBadge.textContent = ev.status;
+            cardBadge.style.background = bc.bg;
+            cardBadge.style.color = bc.color;
+            cardBadge.style.display = '';
+          }
         }
-        if (ev.desc) {
-          document.getElementById('curStepDesc').textContent = ev.desc;
+        // Update card border class
+        const card = document.getElementById('step-card-' + ev.idx);
+        if (card) {
+          card.classList.remove('card-running', 'card-done', 'card-failed');
+          if (ev.status === 'RUNNING') {
+            currentStepIdx = ev.idx;
+            card.classList.add('card-running');
+            const logDiv = document.getElementById('card-log-' + ev.idx);
+            if (logDiv) logDiv.style.display = '';
+            card.scrollIntoView({behavior:'smooth', block:'start'});
+          } else if (ev.status === 'DONE' || ev.status === 'SKIPPED') {
+            card.classList.add('card-done');
+          } else if (ev.status === 'FAILED') {
+            card.classList.add('card-failed');
+          }
         }
         const done = ['DONE','SKIPPED'].includes(ev.status);
         setProgress(ev.idx + (done ? 1 : 0.5), N_STEPS);
@@ -662,6 +661,7 @@ function startInstall() {
           (done ? 'Completato: ' : 'In corso: ') + (ev.name || '');
       } else if (ev.type === 'done') {
         evtSource.close();
+        currentStepIdx = -1;
         document.getElementById('abortBtn').disabled = true;
         document.getElementById('startBtn').disabled = false;
         document.getElementById('startBtn').textContent = '▶  Riavvia Wizard';
@@ -672,18 +672,13 @@ function startInstall() {
           document.getElementById('statusText').textContent =
             'Completato con ' + ev.failed.length + ' errori';
           document.getElementById('statusText').style.color = 'var(--warn)';
-          appendLog('\n✗ Passi falliti: ' + ev.failed.join(', '));
         } else {
           document.getElementById('statusText').textContent = '✓ Completato!';
           document.getElementById('statusText').style.color = 'var(--success)';
-          if (DRY_RUN) {
-            appendLog('\n✓ DRY-RUN completato. Nessuna modifica applicata al sistema.');
-          } else {
-            appendLog('\n✓ DoorPhoneServer installato con successo! Esegui: sudo reboot');
-          }
         }
       } else if (ev.type === 'aborted') {
         evtSource.close();
+        currentStepIdx = -1;
         document.getElementById('abortBtn').disabled = true;
         document.getElementById('startBtn').disabled = false;
         document.getElementById('statusText').textContent = 'Interrotto';
@@ -700,14 +695,6 @@ function abortInstall() {
   document.getElementById('statusText').textContent = 'Interruzione in corso...';
 }
 
-const STEP_SECTIONS = {
-  'Credenziali .env':        'sec-credenziali',
-  'Hostname':                'sec-hostname',
-  'Configurazione Audio':    'sec-audio',
-  'Log2Ram':                 'sec-log2ram',
-  'VSCode Server (opzionale)': 'sec-opzioni',
-};
-
 function stepLabelClick(name, labelEl) {
   if (!DRY_RUN) return;
   const descEl = labelEl.closest('li').querySelector('.step-desc');
@@ -720,20 +707,16 @@ function stepLabelClick(name, labelEl) {
     descEl.classList.add('visible');
   }
 
-  // scroll alla sezione se esiste
-  const secId = STEP_SECTIONS[name];
-  if (!secId) return;
-  const el = document.getElementById(secId);
-  if (!el) return;
-  if (secId === 'sec-credenziali') {
-    const s = document.getElementById('envSection');
-    if (s && s.style.display === 'none') toggleEnv();
+  // scroll alla card dello step
+  const stepIdx = parseInt(labelEl.dataset.step);
+  const card = document.getElementById('step-card-' + stepIdx);
+  if (card) {
+    card.scrollIntoView({behavior:'smooth', block:'start'});
+    card.classList.remove('sec-highlight');
+    void card.offsetWidth;
+    card.classList.add('sec-highlight');
+    setTimeout(() => card.classList.remove('sec-highlight'), 1100);
   }
-  el.scrollIntoView({behavior:'smooth', block:'start'});
-  el.classList.remove('sec-highlight');
-  void el.offsetWidth;
-  el.classList.add('sec-highlight');
-  setTimeout(() => el.classList.remove('sec-highlight'), 1100);
 }
 
 function updateStepLabels() {
@@ -750,14 +733,6 @@ function toggleLog2RamParams() {
 function toggleZramParams() {
   const on = document.getElementById('log2ram_zl2r').checked;
   document.getElementById('zramParams').style.display = on ? '' : 'none';
-}
-
-function toggleEnv() {
-  const s = document.getElementById('envSection');
-  const i = document.getElementById('envToggleIcon');
-  const hidden = s.style.display === 'none';
-  s.style.display = hidden ? 'grid' : 'none';
-  i.textContent = hidden ? '▼' : '▶';
 }
 
 function togglePwd(id) {
@@ -1077,7 +1052,7 @@ def index():
         HTML,
         version         = WIZARD_VERSION,
         steps           = [
-            {"name": s.name, "icon": STEP_ICONS[s.status], "optional": s.optional}
+            {"name": s.name, "icon": STEP_ICONS[s.status], "optional": s.optional, "description": s.description}
             for s in steps_data
         ],
         n_steps         = len(steps_data),
