@@ -106,8 +106,10 @@ HTML = r"""<!DOCTYPE html>
   .log-step { color:var(--accent); font-weight:bold; }
   .log-muted{ color:var(--muted); }
   .step-icon{ width:22px; text-align:center; display:inline-block; }
-  .step-label[data-section]{ cursor:pointer; }
-  .step-label[data-section]:hover{ color:var(--accent) !important; text-decoration:underline; }
+  .step-label.clickable{ cursor:pointer; }
+  .step-label.clickable:hover{ color:var(--accent) !important; text-decoration:underline; }
+  .step-desc{ display:none; }
+  .step-desc.visible{ display:block; }
   @keyframes sec-flash { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 3px var(--accent)} }
   .sec-highlight{ animation:sec-flash .5s ease 2; }
   .progress-bar { transition:width .4s ease; }
@@ -153,14 +155,17 @@ HTML = r"""<!DOCTYPE html>
     <div class="text-xs mt-1" style="color:var(--muted)">Setup Wizard v{{ version }}</div>
   </div>
   <div class="text-xs font-bold mb-2 tracking-widest" style="color:var(--muted)">PASSI</div>
-  <ul id="stepList" class="space-y-1 flex-1">
+  <ul id="stepList" class="space-y-0 flex-1">
     {% for s in steps %}
-    <li id="step-{{ loop.index0 }}" class="flex items-center gap-2 text-sm px-2 py-1 rounded"
-        style="color:#cdd6f4">
-      <span class="step-icon" id="icon-{{ loop.index0 }}" style="color:var(--muted)">{{ s.icon }}</span>
-      <span class="step-label" data-step="{{ loop.index0 }}"
-            onclick="stepLabelClick('{{ s.name }}')">{{ s.name }}</span>
-      {% if s.optional %}<span class="badge" style="background:#45475a;color:var(--muted)">opt</span>{% endif %}
+    <li id="step-{{ loop.index0 }}" class="text-sm px-2 py-1 rounded" style="color:#cdd6f4">
+      <div class="flex items-center gap-2">
+        <span class="step-icon flex-shrink-0" id="icon-{{ loop.index0 }}" style="color:var(--muted)">{{ s.icon }}</span>
+        <span class="step-label flex-1" data-step="{{ loop.index0 }}"
+              data-desc="{{ s.description }}"
+              onclick="stepLabelClick('{{ s.name }}', this)">{{ s.name }}</span>
+        {% if s.optional %}<span class="badge flex-shrink-0" style="background:#45475a;color:var(--muted)">opt</span>{% endif %}
+      </div>
+      <div class="step-desc hidden text-xs mt-1 ml-6 leading-4" style="color:var(--muted)"></div>
     </li>
     {% endfor %}
   </ul>
@@ -703,13 +708,23 @@ const STEP_SECTIONS = {
   'VSCode Server (opzionale)': 'sec-opzioni',
 };
 
-function stepLabelClick(name) {
+function stepLabelClick(name, labelEl) {
   if (!DRY_RUN) return;
+  const descEl = labelEl.closest('li').querySelector('.step-desc');
+
+  // toggle descrizione inline
+  const showing = descEl.classList.contains('visible');
+  document.querySelectorAll('.step-desc.visible').forEach(d => d.classList.remove('visible'));
+  if (!showing) {
+    descEl.textContent = labelEl.dataset.desc;
+    descEl.classList.add('visible');
+  }
+
+  // scroll alla sezione se esiste
   const secId = STEP_SECTIONS[name];
   if (!secId) return;
   const el = document.getElementById(secId);
   if (!el) return;
-  // apri le credenziali se collassate
   if (secId === 'sec-credenziali') {
     const s = document.getElementById('envSection');
     if (s && s.style.display === 'none') toggleEnv();
@@ -721,14 +736,10 @@ function stepLabelClick(name) {
   setTimeout(() => el.classList.remove('sec-highlight'), 1100);
 }
 
-// Aggiorna attributo data-section sui label in base a DRY_RUN
 function updateStepLabels() {
   document.querySelectorAll('.step-label').forEach(el => {
-    const name = el.textContent.trim();
-    if (STEP_SECTIONS[name]) {
-      if (DRY_RUN) el.setAttribute('data-section', STEP_SECTIONS[name]);
-      else el.removeAttribute('data-section');
-    }
+    if (DRY_RUN) el.classList.add('clickable');
+    else { el.classList.remove('clickable'); el.closest('li').querySelector('.step-desc').classList.remove('visible'); }
   });
 }
 
