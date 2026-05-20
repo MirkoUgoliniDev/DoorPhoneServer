@@ -107,10 +107,14 @@ HTML = r"""<!DOCTYPE html>
   .log-muted{ color:var(--muted); }
   .step-icon{ width:22px; text-align:center; display:inline-block; }
   .progress-bar { transition:width .4s ease; }
-  input[type=text],input[type=number],select {
-    background:#1e1e2e; border:1px solid #45475a; border-radius:.4rem;
-    color:#cdd6f4; padding:.35rem .6rem; width:100%;
+  input[type=text],input[type=number],input[type=password],input[type=email],select {
+    background:#1e1e2e !important; border:1px solid #45475a; border-radius:.4rem;
+    color:#cdd6f4 !important; padding:.35rem .6rem; width:100%; box-sizing:border-box;
+    display:block;
   }
+  input:-webkit-autofill,input:-webkit-autofill:focus {
+    -webkit-box-shadow:0 0 0 100px #1e1e2e inset !important;
+    -webkit-text-fill-color:#cdd6f4 !important; }
   input:focus,select:focus { outline:none; border-color:var(--accent); }
   .btn-primary {
     background:var(--accent); color:#1e1e2e; font-weight:700;
@@ -124,15 +128,16 @@ HTML = r"""<!DOCTYPE html>
     border-radius:.5rem; padding:.6rem 1.2rem; cursor:pointer;
   }
   .btn-danger:disabled { opacity:.4; cursor:not-allowed; }
-  .toggle { position:relative; display:inline-block; width:44px; height:24px; }
-  .toggle input { opacity:0; width:0; height:0; }
+  .toggle { position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0; }
+  .toggle input { position:absolute; opacity:0; width:0; height:0; }
   .slider { position:absolute; inset:0; background:#45475a;
-            border-radius:24px; transition:.3s; cursor:pointer; }
+            border-radius:12px; transition:background .3s; cursor:pointer; overflow:hidden; }
   .slider:before { content:""; position:absolute; width:18px; height:18px;
-                   left:3px; bottom:3px; background:#cdd6f4;
-                   border-radius:50%; transition:.3s; }
-  input:checked + .slider { background:var(--accent); }
-  input:checked + .slider:before { transform:translateX(20px); }
+                   left:3px; top:50%; transform:translateY(-50%);
+                   background:#fff; border-radius:50%; transition:transform .3s;
+                   box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  input:checked + .slider { background:var(--success); }
+  input:checked + .slider:before { transform:translateY(-50%) translateX(20px); }
 </style>
 </head>
 <body class="flex">
@@ -201,6 +206,92 @@ HTML = r"""<!DOCTYPE html>
   <!-- Config form -->
   <div id="configSection" class="flex flex-col gap-4">
 
+    <!-- Blocco: Credenziali -->
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-3 cursor-pointer" onclick="toggleEnv()">
+        <span class="text-sm font-bold tracking-widest" style="color:var(--muted)">🔑 CREDENZIALI (.env)</span>
+        <span id="envToggleIcon" style="color:var(--muted)">▼</span>
+      </div>
+      <div id="envSection" class="flex flex-col gap-4">
+
+        <!-- Mumble -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-bold" style="color:var(--accent)">MUMBLE SERVER</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Username</label>
+              <input type="text" id="env_mumble_username" value="Doorpi">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Password</label>
+              <div style="position:relative;width:100%">
+                <input type="password" id="env_mumble_password" placeholder="password server Mumble">
+                <button type="button" onclick="togglePwd('env_mumble_password')"
+                  style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr style="border-color:#313244">
+
+        <!-- Camera IP -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-bold" style="color:var(--accent)">CAMERA IP</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Username</label>
+              <input type="text" id="env_camera_username" placeholder="utente camera IP">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Password</label>
+              <div style="position:relative;width:100%">
+                <input type="password" id="env_camera_password" placeholder="password camera IP">
+                <button type="button" onclick="togglePwd('env_camera_password')"
+                  style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr style="border-color:#313244">
+
+        <!-- Pushover -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-bold" style="color:var(--accent)">PUSHOVER</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">API Token</label>
+              <input type="text" id="env_pushover_token" placeholder="token app Pushover">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">User Key</label>
+              <input type="text" id="env_pushover_key" placeholder="user key Pushover">
+            </div>
+          </div>
+        </div>
+
+        <hr style="border-color:#313244">
+
+        <!-- OpenRouter -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-bold" style="color:var(--accent)">OPENROUTER</span>
+          <div style="position:relative;width:100%">
+            <input type="password" id="env_openrouter_key" placeholder="sk-or-v1-...">
+            <button type="button" onclick="togglePwd('env_openrouter_key')"
+              style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 mt-1">
+          <button class="btn-primary" style="font-size:.85rem;padding:.4rem 1rem" onclick="saveEnv()">
+            💾 Salva .env ora
+          </button>
+          <span id="envSaveMsg" class="text-xs" style="color:var(--success)"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- Blocco: Sistema -->
     <div class="card p-5 flex flex-col gap-4">
       <div>
@@ -208,15 +299,45 @@ HTML = r"""<!DOCTYPE html>
         <input type="text" id="hostname" value="{{ default_hostname }}" placeholder="doorphoneserver">
         <p class="text-xs mt-1" style="color:var(--muted)">Nome del dispositivo in rete</p>
       </div>
-      <div class="flex gap-6">
-        <label class="flex items-center gap-3 cursor-pointer">
-          <label class="toggle"><input type="checkbox" id="log2ram" checked><span class="slider"></span></label>
-          <span class="text-sm">Log2Ram <span style="color:var(--muted)">(protegge microSD)</span></span>
-        </label>
-        <label class="flex items-center gap-3 cursor-pointer">
-          <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
-          <span class="text-sm">code-server <span style="color:var(--muted)">(VSCode nel browser)</span></span>
-        </label>
+    </div>
+
+    <!-- Blocco: Log2Ram -->
+    <div class="card p-5 flex flex-col gap-3">
+      <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">💾 LOG2RAM</div>
+      <div class="flex items-center gap-3">
+        <label class="toggle"><input type="checkbox" id="log2ram" checked onchange="toggleLog2RamParams()"><span class="slider"></span></label>
+        <div>
+          <span class="text-sm font-medium">Installa Log2Ram</span>
+          <span class="text-xs block" style="color:var(--muted)">Protegge la microSD tenendo i log in RAM</span>
+        </div>
+      </div>
+      <div id="log2ramParams" class="flex flex-col gap-3 mt-1">
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">SIZE — Dimensione RAM per i log</label>
+          <input type="text" id="log2ram_size" value="128M" placeholder="es. 128M">
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="toggle"><input type="checkbox" id="log2ram_zl2r" onchange="toggleZramParams()"><span class="slider"></span></label>
+          <div>
+            <span class="text-sm">ZL2R — Usa zram (compressione in RAM)</span>
+            <span class="text-xs block" style="color:var(--muted)">Risparmia RAM comprimendo i log</span>
+          </div>
+        </div>
+        <div id="zramParams" class="flex flex-col gap-3" style="display:none!important">
+          <div>
+            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">COMP_ALG — Algoritmo compressione</label>
+            <select id="log2ram_comp_alg">
+              <option value="lz4">lz4 (più veloce, meno compresso)</option>
+              <option value="lzo">lzo</option>
+              <option value="zstd">zstd (più compresso, più CPU)</option>
+              <option value="zlib">zlib (deflate)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">LOG_DISK_SIZE — Dimensione disco zram</label>
+            <input type="text" id="log2ram_log_disk_size" value="256M" placeholder="es. 256M">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -254,58 +375,15 @@ HTML = r"""<!DOCTYPE html>
 
   </div>
 
-  <!-- .env credentials -->
-  <div class="card p-5">
-    <div class="flex items-center justify-between mb-3 cursor-pointer" onclick="toggleEnv()">
-      <span class="text-sm font-bold tracking-widest" style="color:var(--muted)">🔑 CREDENZIALI (.env)</span>
-      <span id="envToggleIcon" style="color:var(--muted)">▼</span>
-    </div>
-    <div id="envSection" class="grid grid-cols-2 gap-4">
+
+  <!-- Blocco: Opzioni aggiuntive -->
+  <div class="card p-5 flex flex-col gap-3">
+    <div class="text-xs font-semibold tracking-widest mb-1" style="color:var(--muted)">⚙️ OPZIONI AGGIUNTIVE</div>
+    <div class="flex items-center gap-3">
+      <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
       <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">MUMBLE USERNAME</label>
-        <input type="text" id="env_mumble_username" value="Doorpi">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">MUMBLE PASSWORD</label>
-        <div class="relative">
-          <input type="password" id="env_mumble_password" placeholder="password server Mumble">
-          <button type="button" onclick="togglePwd('env_mumble_password')"
-            class="absolute right-2 top-1 text-xs" style="color:var(--muted)">👁</button>
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">CAMERA USERNAME</label>
-        <input type="text" id="env_camera_username" placeholder="utente camera IP">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">CAMERA PASSWORD</label>
-        <div class="relative">
-          <input type="password" id="env_camera_password" placeholder="password camera IP">
-          <button type="button" onclick="togglePwd('env_camera_password')"
-            class="absolute right-2 top-1 text-xs" style="color:var(--muted)">👁</button>
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">PUSHOVER API TOKEN</label>
-        <input type="text" id="env_pushover_token" placeholder="token app Pushover">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">PUSHOVER USER KEY</label>
-        <input type="text" id="env_pushover_key" placeholder="user key Pushover">
-      </div>
-      <div class="col-span-2">
-        <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">OPENROUTER API KEY</label>
-        <div class="relative">
-          <input type="password" id="env_openrouter_key" placeholder="sk-or-v1-...">
-          <button type="button" onclick="togglePwd('env_openrouter_key')"
-            class="absolute right-2 top-1 text-xs" style="color:var(--muted)">👁</button>
-        </div>
-      </div>
-      <div class="col-span-2 flex items-center gap-3 mt-1">
-        <button class="btn-primary" style="font-size:.85rem;padding:.4rem 1rem" onclick="saveEnv()">
-          💾 Salva .env ora
-        </button>
-        <span id="envSaveMsg" class="text-xs" style="color:var(--success)"></span>
+        <span class="text-sm">code-server</span>
+        <span class="text-xs block" style="color:var(--muted)">VSCode nel browser (porta 8080) — opzionale</span>
       </div>
     </div>
   </div>
@@ -449,7 +527,7 @@ HTML = r"""<!DOCTYPE html>
 
         <!-- AGC -->
         <div class="flex items-center gap-2 mt-3">
-          <label class="toggle" style="width:36px;height:20px">
+          <label class="toggle">
             <input type="checkbox" id="agcToggle" onchange="setAGC(this.checked)">
             <span class="slider"></span>
           </label>
@@ -525,8 +603,12 @@ function startInstall() {
     hostname:           document.getElementById('hostname').value,
     play_card:          document.getElementById('playCard').value,
     cap_card:           document.getElementById('capCard').value,
-    install_log2ram:    document.getElementById('log2ram').checked,
-    install_codeserver: document.getElementById('codeserver').checked,
+    install_log2ram:         document.getElementById('log2ram').checked,
+    log2ram_size:            document.getElementById('log2ram_size').value || '128M',
+    log2ram_zl2r:            document.getElementById('log2ram_zl2r').checked,
+    log2ram_comp_alg:        document.getElementById('log2ram_comp_alg').value,
+    log2ram_log_disk_size:   document.getElementById('log2ram_log_disk_size').value || '256M',
+    install_codeserver:      document.getElementById('codeserver').checked,
     dry_run:            DRY_RUN,
     ...getEnvFields(),
   };
@@ -604,6 +686,15 @@ function abortInstall() {
   fetch('/abort', {method:'POST'});
   document.getElementById('abortBtn').disabled = true;
   document.getElementById('statusText').textContent = 'Interruzione in corso...';
+}
+
+function toggleLog2RamParams() {
+  const on = document.getElementById('log2ram').checked;
+  document.getElementById('log2ramParams').style.display = on ? '' : 'none';
+}
+function toggleZramParams() {
+  const on = document.getElementById('log2ram_zl2r').checked;
+  document.getElementById('zramParams').style.display = on ? '' : 'none';
 }
 
 function toggleEnv() {
@@ -983,8 +1074,12 @@ def start():
             "cap_card":           validate_card_index(data.get("cap_card", 1), cap_cards),
             "cap_dev":            0,
             "_audio_autodetect":  not play_cards,
-            "install_log2ram":    bool(data.get("install_log2ram", True)),
-            "install_codeserver": bool(data.get("install_codeserver", False)),
+            "install_log2ram":       bool(data.get("install_log2ram", True)),
+            "log2ram_size":          data.get("log2ram_size", "128M"),
+            "log2ram_zl2r":          bool(data.get("log2ram_zl2r", False)),
+            "log2ram_comp_alg":      data.get("log2ram_comp_alg", "lz4"),
+            "log2ram_log_disk_size": data.get("log2ram_log_disk_size", "256M"),
+            "install_codeserver":    bool(data.get("install_codeserver", False)),
             "env_mumble_username": data.get("env_mumble_username", ""),
             "env_mumble_password": data.get("env_mumble_password", ""),
             "env_camera_username": data.get("env_camera_username", ""),
