@@ -1,0 +1,28 @@
+{
+  "summary": "Configura il server Mumble (Murmur) con le credenziali inserite e lo avvia come servizio.",
+  "sections": [
+    {
+      "label": "CONFIGURA",
+      "color": "blue",
+      "items": [
+        "Password del server (dalla variabile MUMBLE_PASSWORD)",
+        "Parametri di connessione: porta 64738, welcome text, max users"
+      ]
+    },
+    {
+      "label": "ABILITA SERVIZIO",
+      "color": "green",
+      "items": [
+        "mumble-server.service — avvio automatico al boot"
+      ]
+    },
+    {
+      "label": "FILE MODIFICATI",
+      "color": "muted",
+      "items": [
+        "/etc/mumble-server.ini"
+      ]
+    }
+  ],
+  "note": "Il servizio viene avviato immediatamente dopo la configurazione. Se non è attivo entro 15 secondi viene emesso un avviso (non bloccante)."
+}

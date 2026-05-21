@@ -1,0 +1,14 @@
+{
+  "summary": "Rimuove i file temporanei accumulati durante l'installazione per liberare spazio.",
+  "sections": [
+    {
+      "label": "RIMUOVE",
+      "color": "red",
+      "items": [
+        "Cache Go (~pi/go/pkg/) — file intermedi lasciati dalla compilazione",
+        "Cache APT (apt-get clean) — pacchetti .deb scaricati"
+      ]
+    }
+  ],
+  "note": "Questo è l'ultimo passo. La cartella del wizard viene mantenuta — può essere riutilizzata per aggiornamenti o per ri-eseguire il setup."
+}

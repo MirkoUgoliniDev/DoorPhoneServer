@@ -30,6 +30,22 @@ from lib.step_base import Status, STEP_ICONS, validate_hostname
 from lib.audio_utils import detect_audio_cards, validate_card_index
 from steps import build_steps
 
+_HELP_DIR = os.path.join(_HERE, "help")
+
+def _load_step_help() -> dict:
+    result = {}
+    if not os.path.isdir(_HELP_DIR):
+        return result
+    for fname in os.listdir(_HELP_DIR):
+        if fname.endswith(".json"):
+            step_name = fname[:-5]
+            try:
+                with open(os.path.join(_HELP_DIR, fname), encoding="utf-8") as f:
+                    result[step_name] = json.load(f)
+            except Exception:
+                pass
+    return result
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "tk-setup-webui"
 
@@ -238,6 +254,12 @@ HTML = r"""<!DOCTYPE html>
           </div>
           <p class="text-xs mt-0.5 truncate" style="color:var(--muted)" title="{{ s.description }}">{{ s.description }}</p>
         </div>
+        {% if s.name in step_help %}
+        <button data-stepname="{{ s.name }}" onclick="openStepHelp(this.dataset.stepname)" title="Dettagli passo"
+          style="flex-shrink:0;width:1.6rem;height:1.6rem;border-radius:50%;border:1.5px solid #cba6f7;background:#1e1e2e;color:#cba6f7;font-size:.72rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,box-shadow .15s"
+          onmouseover="this.style.background='#cba6f7';this.style.color='#1e1e2e';this.style.boxShadow='0 0 8px #cba6f780'"
+          onmouseout="this.style.background='#1e1e2e';this.style.color='#cba6f7';this.style.boxShadow='none'">i</button>
+        {% endif %}
       </div>
 
       <!-- Config section (solo per step configurabili) -->
@@ -374,16 +396,6 @@ HTML = r"""<!DOCTYPE html>
         </div>
       </div>
 
-      {% elif s.name == 'VSCode Server (opzionale)' %}
-      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
-        <div class="flex items-center gap-3">
-          <label class="toggle"><input type="checkbox" id="codeserver"><span class="slider"></span></label>
-          <div>
-            <span class="text-sm">Installa code-server</span>
-            <span class="text-xs block" style="color:var(--muted)">VSCode nel browser (porta 8080)</span>
-          </div>
-        </div>
-      </div>
       {% endif %}
 
       <!-- Log area (hidden, shown during/after execution) -->
@@ -396,6 +408,22 @@ HTML = r"""<!DOCTYPE html>
   </div>
 
 </main>
+
+<!-- ── STEP HELP MODAL ────────────────────────────────────────────────────── -->
+<div id="stepHelpModal" class="fixed inset-0 z-50 hidden"
+     style="background:rgba(0,0,0,0.75)" onclick="if(event.target===this)closeStepHelp()">
+  <div class="flex items-center justify-center min-h-screen p-4">
+    <div class="card w-full max-w-lg flex flex-col gap-4 p-6" style="max-height:85vh;overflow-y:auto">
+      <div class="flex items-center justify-between">
+        <h2 id="helpModalTitle" class="text-base font-bold" style="color:#cba6f7"></h2>
+        <button onclick="closeStepHelp()" class="text-lg px-2" style="color:var(--muted)">✕</button>
+      </div>
+      <p id="helpModalSummary" class="text-sm" style="color:#cdd6f4;line-height:1.6"></p>
+      <div id="helpModalSections" class="flex flex-col gap-3"></div>
+      <p id="helpModalNote" class="text-xs rounded p-3" style="display:none;background:#1e1e2e;border:1px solid #313244;color:var(--muted);line-height:1.6"></p>
+    </div>
+  </div>
+</div>
 
 <!-- ── AUDIO TEST MODAL ───────────────────────────────────────────────────── -->
 <div id="audioModal" class="fixed inset-0 z-50 hidden"
@@ -591,7 +619,6 @@ function startInstall() {
     log2ram_zl2r:            document.getElementById('log2ram_zl2r').checked,
     log2ram_comp_alg:        document.getElementById('log2ram_comp_alg').value,
     log2ram_log_disk_size:   document.getElementById('log2ram_log_disk_size').value || '256M',
-    install_codeserver:      document.getElementById('codeserver').checked,
     dry_run:            DRY_RUN,
     ...getEnvFields(),
   };
@@ -783,6 +810,51 @@ function closeAudioModal() {
   stopVU();
   stopPlayVU();
   document.getElementById('audioModal').classList.add('hidden');
+}
+
+// ── Step Help Modal ───────────────────────────────────────────────────────────
+const STEP_HELP = {{ step_help | tojson }};
+const HELP_COLORS = {
+  green:  { bg: '#1c2a1e', border: '#40a02b', text: '#a6e3a1' },
+  red:    { bg: '#2a1c1c', border: '#d20f39', text: '#f38ba8' },
+  blue:   { bg: '#1c1e2a', border: '#1e66f5', text: '#89b4fa' },
+  muted:  { bg: '#1e1e2e', border: '#45475a', text: '#9399b2' },
+};
+
+function openStepHelp(stepName) {
+  const h = STEP_HELP[stepName];
+  if (!h) return;
+  document.getElementById('helpModalTitle').textContent = stepName;
+  document.getElementById('helpModalSummary').textContent = h.summary || '';
+  const sectEl = document.getElementById('helpModalSections');
+  sectEl.innerHTML = '';
+  (h.sections || []).forEach(sec => {
+    const c = HELP_COLORS[sec.color] || HELP_COLORS.muted;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `background:${c.bg};border:1px solid ${c.border};border-radius:.5rem;padding:.75rem`;
+    const label = document.createElement('div');
+    label.style.cssText = `font-size:.65rem;font-weight:700;letter-spacing:.08em;color:${c.text};margin-bottom:.4rem`;
+    label.textContent = sec.label;
+    wrap.appendChild(label);
+    (sec.items || []).forEach(item => {
+      const row = document.createElement('div');
+      row.style.cssText = `font-size:.78rem;color:#cdd6f4;padding:.15rem 0;display:flex;gap:.5rem;align-items:baseline`;
+      row.innerHTML = `<span style="color:${c.text};flex-shrink:0">›</span><span>${item}</span>`;
+      wrap.appendChild(row);
+    });
+    sectEl.appendChild(wrap);
+  });
+  const noteEl = document.getElementById('helpModalNote');
+  if (h.note) {
+    noteEl.textContent = '⚠ ' + h.note;
+    noteEl.style.display = 'block';
+  } else {
+    noteEl.style.display = 'none';
+  }
+  document.getElementById('stepHelpModal').classList.remove('hidden');
+}
+function closeStepHelp() {
+  document.getElementById('stepHelpModal').classList.add('hidden');
 }
 
 function togglePlayVU() {
@@ -1061,6 +1133,7 @@ def index():
         play_cards      = play_cards,
         cap_cards       = cap_cards,
         dry_run         = _dry_run,
+        step_help       = _load_step_help(),
     )
 
 
@@ -1109,7 +1182,6 @@ def start():
             "log2ram_zl2r":          bool(data.get("log2ram_zl2r", False)),
             "log2ram_comp_alg":      data.get("log2ram_comp_alg", "lz4"),
             "log2ram_log_disk_size": data.get("log2ram_log_disk_size", "256M"),
-            "install_codeserver":    bool(data.get("install_codeserver", False)),
             "env_mumble_username": data.get("env_mumble_username", ""),
             "env_mumble_password": data.get("env_mumble_password", ""),
             "env_camera_username": data.get("env_camera_username", ""),

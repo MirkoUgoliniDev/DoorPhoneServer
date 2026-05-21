@@ -1,0 +1,54 @@
+{
+  "summary": "Configura i file di sistema del Raspberry Pi: audio, video, OpenAL e parametri di boot.",
+  "sections": [
+    {
+      "label": "DISABILITA",
+      "color": "red",
+      "items": [
+        "Audio onboard BCM (dtparam=audio=off) — si usa scheda USB",
+        "Bluetooth (dtoverlay=disable-bt)",
+        "I2C (dtparam=i2c_arm=off)",
+        "I2S (dtparam=i2s=off)",
+        "SPI (dtparam=spi=off)",
+        "UART hardware (enable_uart=0)",
+        "Camera CSI (camera_auto_detect=0) — si usa IP camera RTSP esterna",
+        "Display/DSI (display_auto_detect=0)",
+        "HDMI output (hdmi_blanking=2 + hdmi_ignore_hotplug=1)",
+        "Driver GPU vc4-kms-v3d (commentato) — sistema headless",
+        "WiFi USB concorrenti (blacklist 8192cu, rtl8xxxu)",
+        "Avvisi undervoltage (avoid_warnings=1)"
+      ]
+    },
+    {
+      "label": "ABILITATO",
+      "color": "green",
+      "items": [
+        "WiFi onboard — necessario per connessione di rete",
+        "GPIO — accesso via /dev/gpiomem (nessun overlay necessario)",
+        "USB host — otg_mode=1 (sezione CM4)"
+      ]
+    },
+    {
+      "label": "PERFORMANCE",
+      "color": "blue",
+      "items": [
+        "gpu_mem=16 — GPU usa 16 MB, resto libero per CPU e applicazione",
+        "arm_boost=1 — turbo firmware-assisted Pi4",
+        "max_framebuffers=1 — ridotto da 2, driver vc4 non attivo",
+        "OpenAL hq-mode=false — elaborazione audio leggera, bassa latenza",
+        "OpenAL nfc=true — near-field compensation per VoIP"
+      ]
+    },
+    {
+      "label": "FILE MODIFICATI",
+      "color": "muted",
+      "items": [
+        "/boot/firmware/config.txt (backup automatico con data)",
+        "/etc/openal/alsoft.conf",
+        "/etc/modprobe.d/blacklist-8192cu.conf",
+        "/etc/modprobe.d/blacklist-rtl8xxxu.conf"
+      ]
+    }
+  ],
+  "note": "Le modifiche a boot/config.txt diventano effettive solo dopo il riavvio del Pi."
+}
