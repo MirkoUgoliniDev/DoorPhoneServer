@@ -850,13 +850,9 @@ document.addEventListener('DOMContentLoaded', () => refreshCards(null));
 
 // ── Audio modal ───────────────────────────────────────────────────────────────
 
-let _vuSource    = null;   // mic
-let _vuPeak      = 0;
-let _vuPeakTimer = null;
-let _playVuSrc   = null;   // speaker
-let _playVuPeak  = 0;
-let _playVuTimer = null;
-let _playVolPct  = 100;
+let _vuSource   = null;   // mic
+let _playVuSrc  = null;   // speaker
+let _playVolPct = 100;
 
 function openAudioModal() {
   document.getElementById('audioModal').classList.remove('hidden');
@@ -876,7 +872,6 @@ function loadFileList() {
 function closeAudioModal() {
   stopAudio();
   stopVU();
-  stopPlayVU();
   document.getElementById('audioModal').classList.add('hidden');
 }
 
@@ -944,16 +939,17 @@ let _vuPeakL = 0, _vuPeakR = 0, _vuPeakTimerL = null, _vuPeakTimerR = null;
 let _playVuPeakL = 0, _playVuPeakR = 0, _playVuTimerL = null, _playVuTimerR = null;
 let _playRawL = 0, _playRawR = 0;
 
-function _setVuChannel(barId, peakId, level, peakRef, timerRef, setters) {
+function _setVuChannel(barId, peakId, level, getPeak, setPeak, getTimer, setTimer) {
   document.getElementById(barId).style.width = level + '%';
-  if (level > peakRef.v) {
-    peakRef.v = level;
+  if (level > getPeak()) {
+    setPeak(level);
     document.getElementById(peakId).style.left = level + '%';
-    clearTimeout(timerRef.t);
-    timerRef.t = setTimeout(() => {
-      peakRef.v = 0;
+    clearTimeout(getTimer());
+    setTimer(setTimeout(() => {
+      setPeak(0);
       document.getElementById(peakId).style.left = '0%';
-    }, 1500);
+      setTimer(null);
+    }, 1500));
   }
 }
 
@@ -962,19 +958,23 @@ function _updatePlayVuDisplay() {
   const sR = Math.round(_playRawR * _playVolPct / 100);
   const db = Math.round(((sL + sR) / 2 / 100 * 60) - 60);
   document.getElementById('playVuDb').textContent = db + ' dB';
-  _setVuChannel('playVuBarL', 'playVuPeakL', sL, {v: _playVuPeakL}, {t: _playVuTimerL},
-    (p, t) => { _playVuPeakL = p; _playVuTimerL = t; });
-  _setVuChannel('playVuBarR', 'playVuPeakR', sR, {v: _playVuPeakR}, {t: _playVuTimerR},
-    (p, t) => { _playVuPeakR = p; _playVuTimerR = t; });
+  _setVuChannel('playVuBarL', 'playVuPeakL', sL,
+    ()=>_playVuPeakL, v=>{ _playVuPeakL=v; }, ()=>_playVuTimerL, t=>{ _playVuTimerL=t; });
+  _setVuChannel('playVuBarR', 'playVuPeakR', sR,
+    ()=>_playVuPeakR, v=>{ _playVuPeakR=v; }, ()=>_playVuTimerR, t=>{ _playVuTimerR=t; });
 }
 
-function stopPlayVU() {
+function _stopPlayVuLocal() {
   if (_playVuSrc) { _playVuSrc.close(); _playVuSrc = null; }
   clearTimeout(_playVuTimerL); clearTimeout(_playVuTimerR);
   _playVuPeakL = _playVuPeakR = _playRawL = _playRawR = 0;
   ['playVuBarL','playVuBarR'].forEach(id => document.getElementById(id).style.width = '0%');
   ['playVuPeakL','playVuPeakR'].forEach(id => document.getElementById(id).style.left = '0%');
   document.getElementById('playVuDb').textContent = '-- dB';
+}
+
+function stopPlayVU() {
+  _stopPlayVuLocal();
   fetch('/audio/play_stop', {method: 'POST'});
 }
 
@@ -988,12 +988,17 @@ function toggleVU() {
     const L = d.L !== undefined ? d.L : d.level;
     const R = d.R !== undefined ? d.R : d.level;
     document.getElementById('vuDb').textContent = d.db + ' dB';
-    _setVuChannel('vuBarL', 'vuPeakL', L, {v: _vuPeakL}, {t: _vuPeakTimerL},
-      (p,t)=>{ _vuPeakL=p; _vuPeakTimerL=t; });
-    _setVuChannel('vuBarR', 'vuPeakR', R, {v: _vuPeakR}, {t: _vuPeakTimerR},
-      (p,t)=>{ _vuPeakR=p; _vuPeakTimerR=t; });
+    _setVuChannel('vuBarL', 'vuPeakL', L,
+      ()=>_vuPeakL, v=>{ _vuPeakL=v; }, ()=>_vuPeakTimerL, t=>{ _vuPeakTimerL=t; });
+    _setVuChannel('vuBarR', 'vuPeakR', R,
+      ()=>_vuPeakR, v=>{ _vuPeakR=v; }, ()=>_vuPeakTimerR, t=>{ _vuPeakTimerR=t; });
   };
-  _vuSource.onerror = () => { _vuSource = null; setTimeout(()=>{ if(!_vuSource) toggleVU(); }, 1000); };
+  let _vuRetry = 0;
+  _vuSource.onerror = () => {
+    _vuSource = null;
+    if (_vuRetry++ < 5) setTimeout(()=>{ if(!_vuSource) toggleVU(); }, 1000);
+    else _vuRetry = 0;
+  };
 }
 
 function stopVU() {
@@ -1099,12 +1104,14 @@ function playFile() {
   const path = sel.value;
   if (!path) { audioLog('✗ Seleziona un file prima', 'var(--error)'); return; }
   const playCard = parseInt(document.getElementById('playCard').value);
-  stopPlayVU();
+  _stopPlayVuLocal();
   audioLog(`▶ ${sel.options[sel.selectedIndex].text}`);
-  fetch('/audio/play_file', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({path, play_card: playCard, play_dev: 0})
-  }).then(r => r.json()).then(d => {
+  fetch('/audio/play_stop', {method:'POST'}).then(() =>
+    fetch('/audio/play_file', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({path, play_card: playCard, play_dev: 0})
+    })
+  ).then(r => r.json()).then(d => {
     audioLog(d.ok ? `✓ ${d.msg}` : `✗ ${d.error}`, d.ok ? 'var(--success)' : 'var(--error)');
     if (d.ok) _startPlaybackVU();
   });
@@ -1146,11 +1153,13 @@ function recStop() {
 function recPlay() {
   const playCard = parseInt(document.getElementById('playCard').value);
   audioLog('▶ Riproduzione in corso...');
-  stopPlayVU();
-  fetch('/audio/rec_play', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({play_card: playCard, play_dev: 0})
-  }).then(r=>r.json()).then(d=>{
+  _stopPlayVuLocal();
+  fetch('/audio/play_stop', {method:'POST'}).then(() =>
+    fetch('/audio/rec_play', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({play_card: playCard, play_dev: 0})
+    })
+  ).then(r=>r.json()).then(d=>{
     audioLog(d.ok ? `✓ ${d.msg}` : `✗ ${d.error}`, d.ok ? 'var(--success)' : 'var(--error)');
     if (d.ok) _startPlaybackVU();
   });
@@ -1158,6 +1167,9 @@ function recPlay() {
 
 function _startPlaybackVU() {
   if (_playVuSrc) { _playVuSrc.close(); _playVuSrc = null; }
+  clearTimeout(_playVuTimerL); clearTimeout(_playVuTimerR);
+  _playVuPeakL = _playVuPeakR = 0;
+  ['playVuPeakL','playVuPeakR'].forEach(id => document.getElementById(id).style.left = '0%');
   _playVuSrc = new EventSource('/audio/playback_vu_stream');
   _playVuSrc.onmessage = (e) => {
     const d = JSON.parse(e.data);
