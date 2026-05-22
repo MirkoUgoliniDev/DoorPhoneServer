@@ -27,7 +27,7 @@ from lib.constants import WIZARD_VERSION, DEFAULT_HOSTNAME, LOG_FILE
 from lib.runner   import Runner, get_abort_event
 from lib.sysinfo  import SystemInfo
 from lib.step_base import Status, STEP_ICONS, validate_hostname
-from lib.audio_utils import detect_audio_cards, validate_card_index
+from lib.audio_utils import detect_audio_cards, validate_card_index, get_card_channels
 from steps import build_steps
 
 _HELP_DIR = os.path.join(_HERE, "help")
@@ -341,21 +341,14 @@ HTML = r"""<!DOCTYPE html>
       <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244;display:grid;grid-template-columns:1fr 1fr;gap:.75rem;align-items:end">
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
-          {% if play_cards %}
-          <select id="playCard">{% for c in play_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}</select>
-          {% else %}
-          <input type="number" id="playCard" value="1" min="0" max="9">
-          {% endif %}
+          <select id="playCard"><option value="0">0 — rilevamento...</option></select>
         </div>
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO INPUT (card n.)</label>
-          {% if cap_cards %}
-          <select id="capCard">{% for c in cap_cards %}<option value="{{ c.index }}">{{ c.index }} — {{ c.name }}</option>{% endfor %}</select>
-          {% else %}
-          <input type="number" id="capCard" value="1" min="0" max="9">
-          {% endif %}
+          <select id="capCard"><option value="0">0 — rilevamento...</option></select>
         </div>
-        <div class="col-span-2 mt-1" style="grid-column:1/-1">
+        <div class="col-span-2 mt-1 flex gap-2 flex-wrap" style="grid-column:1/-1">
+          <button onclick="refreshCards(this)" class="btn-primary" style="background:#45475a;color:#cdd6f4;font-size:.85rem;padding:.4rem 1.1rem">↺ Aggiorna schede</button>
           <button onclick="openAudioModal()" class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">🔊 Test Audio &amp; Volumi</button>
         </div>
       </div>
@@ -492,17 +485,24 @@ HTML = r"""<!DOCTYPE html>
             <span class="text-xs w-20 text-right flex-shrink-0" style="color:var(--muted)">Speaker</span>
             <span id="playVuDb" class="text-xs font-mono ml-auto" style="color:var(--muted)">-- dB</span>
           </div>
-          <div id="playVuMeter">
-            <div class="relative w-full rounded overflow-hidden" style="height:14px;background:#313244">
-              <div id="playVuBar" style="height:100%;width:0%;
-                   background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);
-                   transition:width 80ms linear;border-radius:inherit"></div>
-              <div id="playVuPeak" style="position:absolute;top:0;bottom:0;width:2px;
-                   background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+          <div id="playVuMeter" class="flex flex-col gap-1">
+            <div class="flex items-center gap-1">
+              <span id="playVuLabelL" class="text-xs font-mono flex-shrink-0" style="color:var(--muted);width:1rem">L</span>
+              <div class="relative flex-1 rounded overflow-hidden" style="height:10px;background:#313244">
+                <div id="playVuBarL" style="height:100%;width:0%;background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);transition:width 80ms linear;border-radius:inherit"></div>
+                <div id="playVuPeakL" style="position:absolute;top:0;bottom:0;width:2px;background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+              </div>
             </div>
-            <div class="flex justify-between text-xs mt-0.5" style="color:var(--muted)">
-              <span>-60</span><span>-40</span><span>-20</span><span>-10</span><span>0 dB</span>
+            <div id="playVuRowR" class="flex items-center gap-1">
+              <span class="text-xs font-mono flex-shrink-0" style="color:var(--muted);width:1rem">R</span>
+              <div class="relative flex-1 rounded overflow-hidden" style="height:10px;background:#313244">
+                <div id="playVuBarR" style="height:100%;width:0%;background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);transition:width 80ms linear;border-radius:inherit"></div>
+                <div id="playVuPeakR" style="position:absolute;top:0;bottom:0;width:2px;background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+              </div>
             </div>
+          </div>
+          <div class="flex justify-between text-xs mt-0.5" style="color:var(--muted);padding-left:1.25rem">
+            <span>-60</span><span>-40</span><span>-20</span><span>-10</span><span>0 dB</span>
           </div>
         </div>
 
@@ -512,22 +512,29 @@ HTML = r"""<!DOCTYPE html>
             <span class="text-xs w-20 text-right flex-shrink-0" style="color:var(--muted)">Mic 🎤</span>
             <span id="vuDb" class="text-xs font-mono ml-auto" style="color:var(--muted)">-- dB</span>
           </div>
-          <div id="vuMeter">
-            <div class="relative w-full rounded overflow-hidden" style="height:14px;background:#313244">
-              <div id="vuBar" style="height:100%;width:0%;
-                   background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);
-                   transition:width 80ms linear;border-radius:inherit"></div>
-              <div id="vuPeak" style="position:absolute;top:0;bottom:0;width:2px;
-                   background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+          <div id="vuMeter" class="flex flex-col gap-1">
+            <div class="flex items-center gap-1">
+              <span id="vuLabelL" class="text-xs font-mono flex-shrink-0" style="color:var(--muted);width:1rem">L</span>
+              <div class="relative flex-1 rounded overflow-hidden" style="height:10px;background:#313244">
+                <div id="vuBarL" style="height:100%;width:0%;background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);transition:width 80ms linear;border-radius:inherit"></div>
+                <div id="vuPeakL" style="position:absolute;top:0;bottom:0;width:2px;background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+              </div>
             </div>
-            <div class="flex justify-between text-xs mt-0.5" style="color:var(--muted)">
-              <span>-60</span><span>-40</span><span>-20</span><span>-10</span><span>0 dB</span>
+            <div id="vuRowR" class="flex items-center gap-1">
+              <span class="text-xs font-mono flex-shrink-0" style="color:var(--muted);width:1rem">R</span>
+              <div class="relative flex-1 rounded overflow-hidden" style="height:10px;background:#313244">
+                <div id="vuBarR" style="height:100%;width:0%;background:linear-gradient(to right,#a6e3a1 0%,#f9e2af 65%,#f38ba8 85%);transition:width 80ms linear;border-radius:inherit"></div>
+                <div id="vuPeakR" style="position:absolute;top:0;bottom:0;width:2px;background:#f38ba8;left:0%;transition:left 80ms linear"></div>
+              </div>
             </div>
+          </div>
+          <div class="flex justify-between text-xs mt-0.5" style="color:var(--muted);padding-left:1.25rem">
+            <span>-60</span><span>-40</span><span>-20</span><span>-10</span><span>0 dB</span>
           </div>
         </div>
 
         <!-- AGC -->
-        <div class="flex items-center gap-2 mt-3">
+        <div id="agcRow" class="flex items-center gap-2 mt-3" style="display:none!important">
           <label class="toggle">
             <input type="checkbox" id="agcToggle" onchange="setAGC(this.checked)">
             <span class="slider"></span>
@@ -779,6 +786,68 @@ function getEnvFields() {
   };
 }
 
+// ── Audio card refresh ────────────────────────────────────────────────────────
+
+let _capStereo  = false;
+let _playStereo = false;
+
+function _setVuStereoMode(micStereo, spkStereo) {
+  _capStereo  = micStereo;
+  _playStereo = spkStereo;
+  ['vuRowR', 'vuScaleR'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = micStereo ? '' : 'none';
+  });
+  ['playVuRowR', 'playVuScaleR'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = spkStereo ? '' : 'none';
+  });
+  // Rinomina L→ "  " su mono (barra senza etichetta)
+  ['vuLabelL', 'playVuLabelL'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = (i === 0 ? micStereo : spkStereo) ? 'L' : '';
+  });
+}
+
+function _populateCardSelect(selectId, cards, preferIndex) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '';
+  if (cards.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '0'; opt.textContent = '(nessuna scheda rilevata)';
+    sel.appendChild(opt);
+    return cards;
+  }
+  cards.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.index;
+    opt.textContent = `${c.index} — ${c.name}`;
+    if (c.index === preferIndex) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  return cards;
+}
+
+function refreshCards(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '↺ …'; }
+  fetch('/audio/refresh_cards')
+    .then(r => r.json())
+    .then(d => {
+      const curPlay = parseInt(document.getElementById('playCard').value) || 0;
+      const curCap  = parseInt(document.getElementById('capCard').value)  || 0;
+      _populateCardSelect('playCard', d.play_cards, curPlay);
+      _populateCardSelect('capCard',  d.cap_cards,  curCap);
+      // Canali della scheda selezionata
+      const selPlay = d.play_cards.find(c => c.index === (parseInt(document.getElementById('playCard').value)||0));
+      const selCap  = d.cap_cards.find( c => c.index === (parseInt(document.getElementById('capCard').value) ||0));
+      _setVuStereoMode((selCap?.channels || 1) > 1, (selPlay?.channels || 1) > 1);
+      if (btn) { btn.disabled = false; btn.textContent = '↺ Aggiorna schede'; }
+    })
+    .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Aggiorna schede'; } });
+}
+
+document.addEventListener('DOMContentLoaded', () => refreshCards(null));
+
 // ── Audio modal ───────────────────────────────────────────────────────────────
 
 let _vuSource    = null;   // mic
@@ -787,8 +856,7 @@ let _vuPeakTimer = null;
 let _playVuSrc   = null;   // speaker
 let _playVuPeak  = 0;
 let _playVuTimer = null;
-let _playVolPct  = 100;    // valore corrente slider playback (per scalare VU)
-let _playRawLevel = 0;     // ultimo livello PCM grezzo ricevuto dallo stream
+let _playVolPct  = 100;
 
 function openAudioModal() {
   document.getElementById('audioModal').classList.remove('hidden');
@@ -860,74 +928,81 @@ function closeStepHelp() {
 function togglePlayVU() {
   if (_playVuSrc) { stopPlayVU(); return; }
   const card = parseInt(document.getElementById('playCard').value);
-  _playVuPeak = 0;
-  _playRawLevel = 0;
+  _playVuPeakL = _playVuPeakR = _playRawL = _playRawR = 0;
   _playVuSrc = new EventSource(`/audio/play_vu_stream?card=${card}&dev=0`);
   _playVuSrc.onmessage = (e) => {
     const d = JSON.parse(e.data);
     if (d.level === undefined) return;
-    _playRawLevel = d.level;
+    _playRawL = d.L !== undefined ? d.L : d.level;
+    _playRawR = d.R !== undefined ? d.R : d.level;
     _updatePlayVuDisplay();
   };
   _playVuSrc.onerror = () => stopPlayVU();
 }
 
-function _updatePlayVuDisplay() {
-  const scaled = Math.round(_playRawLevel * _playVolPct / 100);
-  document.getElementById('playVuBar').style.width = scaled + '%';
-  const db = Math.round((scaled / 100 * 60) - 60);
-  document.getElementById('playVuDb').textContent = db + ' dB';
-  if (scaled > _playVuPeak) {
-    _playVuPeak = scaled;
-    document.getElementById('playVuPeak').style.left = scaled + '%';
-    clearTimeout(_playVuTimer);
-    _playVuTimer = setTimeout(() => {
-      _playVuPeak = 0;
-      document.getElementById('playVuPeak').style.left = '0%';
+let _vuPeakL = 0, _vuPeakR = 0, _vuPeakTimerL = null, _vuPeakTimerR = null;
+let _playVuPeakL = 0, _playVuPeakR = 0, _playVuTimerL = null, _playVuTimerR = null;
+let _playRawL = 0, _playRawR = 0;
+
+function _setVuChannel(barId, peakId, level, peakRef, timerRef, setters) {
+  document.getElementById(barId).style.width = level + '%';
+  if (level > peakRef.v) {
+    peakRef.v = level;
+    document.getElementById(peakId).style.left = level + '%';
+    clearTimeout(timerRef.t);
+    timerRef.t = setTimeout(() => {
+      peakRef.v = 0;
+      document.getElementById(peakId).style.left = '0%';
     }, 1500);
   }
 }
 
+function _updatePlayVuDisplay() {
+  const sL = Math.round(_playRawL * _playVolPct / 100);
+  const sR = Math.round(_playRawR * _playVolPct / 100);
+  const db = Math.round(((sL + sR) / 2 / 100 * 60) - 60);
+  document.getElementById('playVuDb').textContent = db + ' dB';
+  _setVuChannel('playVuBarL', 'playVuPeakL', sL, {v: _playVuPeakL}, {t: _playVuTimerL},
+    (p, t) => { _playVuPeakL = p; _playVuTimerL = t; });
+  _setVuChannel('playVuBarR', 'playVuPeakR', sR, {v: _playVuPeakR}, {t: _playVuTimerR},
+    (p, t) => { _playVuPeakR = p; _playVuTimerR = t; });
+}
+
 function stopPlayVU() {
   if (_playVuSrc) { _playVuSrc.close(); _playVuSrc = null; }
-  clearTimeout(_playVuTimer);
-  _playVuPeak = 0;
-  _playRawLevel = 0;
-  document.getElementById('playVuBar').style.width = '0%';
-  document.getElementById('playVuPeak').style.left = '0%';
-  document.getElementById('playVuDb').textContent  = '-- dB';
+  clearTimeout(_playVuTimerL); clearTimeout(_playVuTimerR);
+  _playVuPeakL = _playVuPeakR = _playRawL = _playRawR = 0;
+  ['playVuBarL','playVuBarR'].forEach(id => document.getElementById(id).style.width = '0%');
+  ['playVuPeakL','playVuPeakR'].forEach(id => document.getElementById(id).style.left = '0%');
+  document.getElementById('playVuDb').textContent = '-- dB';
   fetch('/audio/play_stop', {method: 'POST'});
 }
 
 function toggleVU() {
   if (_vuSource) { stopVU(); return; }
   const card = parseInt(document.getElementById('capCard').value);
-  _vuPeak = 0;
+  _vuPeakL = _vuPeakR = 0;
   _vuSource = new EventSource(`/audio/vu_stream?card=${card}&dev=0`);
   _vuSource.onmessage = (e) => {
     const d = JSON.parse(e.data);
-    document.getElementById('vuBar').style.width  = d.level + '%';
-    document.getElementById('vuDb').textContent   = d.db + ' dB';
-    if (d.level > _vuPeak) {
-      _vuPeak = d.level;
-      document.getElementById('vuPeak').style.left = d.level + '%';
-      clearTimeout(_vuPeakTimer);
-      _vuPeakTimer = setTimeout(() => {
-        _vuPeak = 0;
-        document.getElementById('vuPeak').style.left = '0%';
-      }, 1500);
-    }
+    const L = d.L !== undefined ? d.L : d.level;
+    const R = d.R !== undefined ? d.R : d.level;
+    document.getElementById('vuDb').textContent = d.db + ' dB';
+    _setVuChannel('vuBarL', 'vuPeakL', L, {v: _vuPeakL}, {t: _vuPeakTimerL},
+      (p,t)=>{ _vuPeakL=p; _vuPeakTimerL=t; });
+    _setVuChannel('vuBarR', 'vuPeakR', R, {v: _vuPeakR}, {t: _vuPeakTimerR},
+      (p,t)=>{ _vuPeakR=p; _vuPeakTimerR=t; });
   };
   _vuSource.onerror = () => { _vuSource = null; setTimeout(()=>{ if(!_vuSource) toggleVU(); }, 1000); };
 }
 
 function stopVU() {
   if (_vuSource) { _vuSource.close(); _vuSource = null; }
-  clearTimeout(_vuPeakTimer);
-  _vuPeak = 0;
-  document.getElementById('vuBar').style.width = '0%';
-  document.getElementById('vuPeak').style.left = '0%';
-  document.getElementById('vuDb').textContent  = '-- dB';
+  clearTimeout(_vuPeakTimerL); clearTimeout(_vuPeakTimerR);
+  _vuPeakL = _vuPeakR = 0;
+  ['vuBarL','vuBarR'].forEach(id => document.getElementById(id).style.width = '0%');
+  ['vuPeakL','vuPeakR'].forEach(id => document.getElementById(id).style.left = '0%');
+  document.getElementById('vuDb').textContent = '-- dB';
 }
 
 function audioLog(msg, color) {
@@ -965,8 +1040,13 @@ function loadAudioInfo() {
         ...data.cap.filter(c => c.mode === 'capture')
       ];
       renderSliders('playVolumes', merged);
-      if (data.agc !== undefined)
+      const agcRow = document.getElementById('agcRow');
+      if (data.agc !== null && data.agc !== undefined) {
+        agcRow.style.removeProperty('display');
         document.getElementById('agcToggle').checked = data.agc;
+      } else {
+        agcRow.style.setProperty('display', 'none', 'important');
+      }
     })
     .catch(() => audioLog('Errore caricamento controlli audio', 'var(--error)'));
 }
@@ -1083,7 +1163,8 @@ function _startPlaybackVU() {
     const d = JSON.parse(e.data);
     if (d.done) { stopPlayVU(); return; }
     if (d.level === undefined) return;
-    _playRawLevel = d.level;
+    _playRawL = d.L !== undefined ? d.L : d.level;
+    _playRawR = d.R !== undefined ? d.R : d.level;
     _updatePlayVuDisplay();
   };
   _playVuSrc.onerror = () => stopPlayVU();
@@ -1119,7 +1200,6 @@ function saveEnv() {
 @app.route("/")
 def index():
     steps_data = build_steps()
-    play_cards, cap_cards = detect_audio_cards()
     return render_template_string(
         HTML,
         version         = WIZARD_VERSION,
@@ -1130,8 +1210,6 @@ def index():
         n_steps         = len(steps_data),
         sysinfo         = _sysinfo,
         default_hostname= DEFAULT_HOSTNAME,
-        play_cards      = play_cards,
-        cap_cards       = cap_cards,
         dry_run         = _dry_run,
         step_help       = _load_step_help(),
     )
@@ -1300,13 +1378,25 @@ def _stop_vu_proc():
 
 def _vu_compute(raw: bytes):
     if len(raw) < 2:
-        return {'level': 0, 'db': -60.0}
-    samples = struct.unpack(f"{len(raw)//2}h", raw)
-    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
-    db = round(20 * math.log10(rms / 32768), 1) if rms > 0 else -60.0
-    # scala -60 dB → 0%,  0 dB → 100%
+        return {'level': 0, 'db': -60.0, 'L': 0, 'R': 0, 'dbL': -60.0, 'dbR': -60.0}
+    n = len(raw) // 2
+    samples = struct.unpack(f"{n}h", raw)
+
+    def _chan(samps):
+        rms = (sum(s * s for s in samps) / len(samps)) ** 0.5
+        db  = round(20 * math.log10(rms / 32768), 1) if rms > 0 else -60.0
+        return max(0, min(100, int((db + 60) / 60 * 100))), db
+
+    if n >= 4 and n % 2 == 0:
+        lL, dbL = _chan(samples[0::2])
+        lR, dbR = _chan(samples[1::2])
+    else:
+        lL, dbL = lR, dbR = _chan(samples)
+
+    rms   = (sum(s * s for s in samples) / len(samples)) ** 0.5
+    db    = round(20 * math.log10(rms / 32768), 1) if rms > 0 else -60.0
     level = max(0, min(100, int((db + 60) / 60 * 100)))
-    return {'level': level, 'db': db}
+    return {'level': level, 'db': db, 'L': lL, 'R': lR, 'dbL': dbL, 'dbR': dbR}
 
 
 def _vu_publish(data: dict):
@@ -1351,10 +1441,13 @@ def _vu_worker():
                 try: proc.terminate()
                 except: pass
             _t.sleep(0.15)
+            if _preparing_rec:   # ricontrollo dopo il sleep: rec_start potrebbe aver appena settato il flag
+                continue
             try:
+                ch = get_card_channels(_vu_card, _vu_dev, stream="capture")
                 proc = subprocess.Popen(
                     ["arecord", "-D", f"hw:{_vu_card},{_vu_dev}",
-                     "-f", "S16_LE", "-r", "48000", "-c", "1"],
+                     "-f", "S16_LE", "-r", "48000", "-c", str(ch)],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
                 )
                 _vu_proc = proc
@@ -1416,6 +1509,17 @@ def _amixer_get(card: int, control: str, prefer_capture: bool = False):
 
 # ── Audio routes ──────────────────────────────────────────────────────────────
 
+@app.route("/audio/refresh_cards")
+def audio_refresh_cards():
+    play_cards, cap_cards = detect_audio_cards()
+    return jsonify({
+        "play_cards": [{"index": c.index, "name": c.name,
+                        "channels": get_card_channels(c.index, 0, "playback")} for c in play_cards],
+        "cap_cards":  [{"index": c.index, "name": c.name,
+                        "channels": get_card_channels(c.index, 0, "capture")}  for c in cap_cards],
+    })
+
+
 @app.route("/audio/info")
 def audio_info():
     play_card = int(request.args.get("play_card", 0))
@@ -1434,9 +1538,9 @@ def audio_info():
     try:
         r = subprocess.run(["amixer", "-c", str(cap_card), "sget", "Auto Gain Control"],
                            capture_output=True, text=True, timeout=5)
-        result["agc"] = "[on]" in r.stdout
+        result["agc"] = ("[on]" in r.stdout) if r.returncode == 0 else None
     except Exception:
-        result["agc"] = False
+        result["agc"] = None
     return jsonify(result)
 
 
@@ -1488,14 +1592,15 @@ def audio_rec_start():
     cap_card = int(data.get("cap_card", 0))
     cap_dev  = int(data.get("cap_dev",  0))
     _stop_rec()
-    _preparing_rec = True          # blocca il VU generator dal riaprire hw
+    _preparing_rec = True          # blocca il VU worker dal riaprire hw
     _stop_vu_proc()
     _rec_buf.clear()
-    import time; time.sleep(0.15)  # attende che il VU generator entri in modalità attesa
+    import time; time.sleep(0.20)  # attende che il worker entri in modalità attesa
     try:
+        ch = get_card_channels(cap_card, cap_dev, stream="capture")
         _rec_proc = subprocess.Popen(
             ["arecord", "-D", f"hw:{cap_card},{cap_dev}",
-             "-f", "S16_LE", "-r", "48000", "-c", "1"],
+             "-f", "S16_LE", "-r", "48000", "-c", str(ch)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         import time as _t; _t.sleep(0.1)
@@ -1577,11 +1682,11 @@ def audio_playback_vu_stream():
     def generate():
         while True:
             if _audio_proc is None or _audio_proc.poll() is not None:
-                yield f"data: {json.dumps({'level': 0, 'done': True})}\n\n"
+                yield f"data: {json.dumps({'level': 0, 'L': 0, 'R': 0, 'done': True})}\n\n"
                 break
             if _play_vu_queue:
                 level = _play_vu_queue.popleft()
-                yield f"data: {json.dumps({'level': level})}\n\n"
+                yield f"data: {json.dumps({'level': level, 'L': level, 'R': level})}\n\n"
             else:
                 yield ": ka\n\n"
             _t.sleep(0.05)
@@ -1682,7 +1787,7 @@ def audio_play_vu_stream():
                     if m:
                         level = min(100, int(m.group(1)))
                         leftover = ""
-                        yield f"data: {json.dumps({'level': level})}\n\n"
+                        yield f"data: {json.dumps({'level': level, 'L': level, 'R': level})}\n\n"
                 else:
                     yield ": ka\n\n"
         except GeneratorExit:
@@ -1719,7 +1824,9 @@ def audio_agc():
             ["amixer", "-c", str(card), "sset", "Auto Gain Control", state],
             capture_output=True, text=True, timeout=5
         )
-        return jsonify({"ok": r.returncode == 0})
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": "AGC non disponibile su questa scheda"})
+        return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
