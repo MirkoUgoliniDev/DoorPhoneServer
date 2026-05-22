@@ -38,11 +38,22 @@ BOOT_CFG="/boot/firmware/config.txt"
 [ -f "$BOOT_CFG" ] || BOOT_CFG="/boot/config.txt"
 if [ -f "$BOOT_CFG" ]; then
     cp "$BOOT_CFG" "$BOOT_CFG.bak.$(date +%Y%m%d)"
+    # Audio onboard off
     sed -i 's/^dtparam=audio=.*/dtparam=audio=off/' "$BOOT_CFG"
+    # Bluetooth off
     grep -q "dtoverlay=disable-bt"    "$BOOT_CFG" || echo "dtoverlay=disable-bt"    >> "$BOOT_CFG"
+    # GPU memoria minima (headless)
     grep -q "gpu_mem="                "$BOOT_CFG" || echo "gpu_mem=16"              >> "$BOOT_CFG"
+    # Video/display off — sistema headless, nessun monitor
     grep -q "camera_auto_detect"      "$BOOT_CFG" || echo "camera_auto_detect=0"   >> "$BOOT_CFG"
     grep -q "display_auto_detect"     "$BOOT_CFG" || echo "display_auto_detect=0"  >> "$BOOT_CFG"
+    grep -q "hdmi_blanking"           "$BOOT_CFG" || echo "hdmi_blanking=2"        >> "$BOOT_CFG"
+    grep -q "hdmi_ignore_hotplug"     "$BOOT_CFG" || echo "hdmi_ignore_hotplug=1"  >> "$BOOT_CFG"
+    # Disabilita driver video vc4 e riduce framebuffer a 1 (headless, nessun display)
+    sed -i 's/^\(dtoverlay=vc4-kms-v3d.*\)/#\1/' "$BOOT_CFG"
+    sed -i 's/^\(dtoverlay=vc4-fkms-v3d.*\)/#\1/' "$BOOT_CFG"
+    sed -i 's/^max_framebuffers=.*/max_framebuffers=1/' "$BOOT_CFG"
+    # Sopprimi avvisi undervoltage
     grep -q "avoid_warnings"          "$BOOT_CFG" || echo "avoid_warnings=1"       >> "$BOOT_CFG"
     echo "  ✓ boot/config.txt aggiornato"
 else

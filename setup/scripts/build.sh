@@ -1,7 +1,7 @@
 #!/bin/bash
 
-## Per rendere lo script eseguibile: sudo chmod +x tkbuild.sh
-## Eseguire come utente pi dalla directory del progetto: cd /home/doorphoneserver && ./tkbuild.sh
+## Per rendere lo script eseguibile: sudo chmod +x setup/scripts/build.sh
+## Eseguire come utente pi dalla directory del progetto: cd /home/doorphoneserver && ./setup/scripts/build.sh
 
 PROJECT_ROOT=/home/doorphoneserver
 GO=/usr/local/go/bin/go
@@ -58,8 +58,8 @@ echo "[4/6] $(date '+%H:%M:%S') - Pulizia cache di build..."
 echo "[5/6] $(date '+%H:%M:%S') - Arresto servizio e installazione binario..."
 sudo systemctl stop doorphoneserver 2>/dev/null || sudo killall -q -s 15 doorphoneserver 2>/dev/null
 sleep 2
-sudo cp "$TMPBIN" "$FINALBIN"
-sudo chmod +x "$FINALBIN"
+cp "$TMPBIN" "$FINALBIN"
+chmod +x "$FINALBIN"
 
 echo "[6/6] $(date '+%H:%M:%S') - Verifica binario installato..."
 if [ -f "$FINALBIN" ]; then
