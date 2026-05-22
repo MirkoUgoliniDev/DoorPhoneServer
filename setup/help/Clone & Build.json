@@ -1,0 +1,22 @@
+{
+  "summary": "Clona il repository da GitHub e compila il binario doorphoneserver.",
+  "sections": [
+    {
+      "label": "CLONA DA",
+      "color": "blue",
+      "items": [
+        "https://github.com/MirkoUgoliniDev/DoorPhoneServer",
+        "Destinazione: /home/doorphoneserver/gocode/src/github.com/doorphoneserver/doorphoneserver/"
+      ]
+    },
+    {
+      "label": "COMPILA",
+      "color": "green",
+      "items": [
+        "Binario: /home/doorphoneserver/bin/doorphoneserver",
+        "Flags: -trimpath, -ldflags='-s -w' (binario ottimizzato, senza debug symbols)"
+      ]
+    }
+  ],
+  "note": "La compilazione su Raspberry Pi 4 richiede 5–15 minuti. Se il repo è già presente viene eseguito un 'git pull' invece del clone."
+}

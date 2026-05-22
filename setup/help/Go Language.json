@@ -1,0 +1,21 @@
+{
+  "summary": "Scarica e installa il compilatore Go necessario per compilare il binario doorphoneserver.",
+  "sections": [
+    {
+      "label": "INSTALLA",
+      "color": "green",
+      "items": [
+        "Go 1.24.4 in /usr/local/go/",
+        "Aggiunge /usr/local/go/bin a PATH in /etc/environment"
+      ]
+    },
+    {
+      "label": "SCARICA DA",
+      "color": "blue",
+      "items": [
+        "https://go.dev/dl/go1.24.4.linux-arm64.tar.gz (o arm per Pi 32-bit)"
+      ]
+    }
+  ],
+  "note": "Se Go è già installato nella versione corretta il passo viene saltato. Il tarball temporaneo viene rimosso dopo l'estrazione."
+}

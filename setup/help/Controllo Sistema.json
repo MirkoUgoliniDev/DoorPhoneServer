@@ -1,0 +1,18 @@
+{
+  "summary": "Verifica che il sistema soddisfi i requisiti minimi prima di avviare l'installazione.",
+  "sections": [
+    {
+      "label": "CONTROLLA",
+      "color": "blue",
+      "items": [
+        "Modello Raspberry Pi e architettura CPU",
+        "Versione OS (codename Debian)",
+        "Spazio libero su disco (minimo 3 GB richiesti)",
+        "RAM disponibile",
+        "Permessi sudo (senza password o con gruppo sudo/wheel)",
+        "Connessione Internet (ping 8.8.8.8 / debian.org)"
+      ]
+    }
+  ],
+  "note": "Se il controllo fallisce l'installazione viene bloccata. Spazio insufficiente o assenza di sudo sono gli errori più comuni."
+}

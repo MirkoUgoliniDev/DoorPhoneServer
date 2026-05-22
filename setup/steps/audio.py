@@ -1,8 +1,10 @@
 """Passo 6 — Configurazione audio ALSA."""
 
+import re
 from pathlib import Path
 from lib.step_base import Step, Status
-from lib.audio_utils import best_card_pair, generate_asound_conf
+from lib.audio_utils import best_card_pair, generate_asound_conf, get_playback_control
+from lib.constants import REPO_ROOT
 
 
 class StepAudioConfig(Step):
@@ -49,6 +51,25 @@ class StepAudioConfig(Step):
         )
         runner.run(["chmod", "644", "/etc/asound.conf"], sudo=True)
         # alsoft.conf è installato dallo step Config Boot RPi (setup_configs.sh)
+
+        # Aggiorna outputdevice nel XML sorgente (verrà copiato da StepDataDir)
+        xml_src = REPO_ROOT / "doorphoneserver.xml"
+        if runner.dry_run:
+            runner.log("  [DRY-RUN] XML outputdevice → (controllo mixer rilevato)")
+        elif xml_src.exists():
+            ctrl = get_playback_control(play_card)
+            if ctrl:
+                content = xml_src.read_text(encoding="utf-8")
+                content = re.sub(r'<outputdevice>[^<]*</outputdevice>',
+                                 f'<outputdevice>{ctrl}</outputdevice>', content)
+                content = re.sub(r'<outputvolcontroldevice>[^<]*</outputvolcontroldevice>',
+                                 f'<outputvolcontroldevice>{ctrl}</outputvolcontroldevice>', content)
+                content = re.sub(r'<outputmutecontroldevice>[^<]*</outputmutecontroldevice>',
+                                 f'<outputmutecontroldevice>{ctrl}</outputmutecontroldevice>', content)
+                xml_src.write_text(content, encoding="utf-8")
+                runner.log(f"  ✓ XML outputdevice → {ctrl}")
+            else:
+                runner.log("  ⚠ Controllo mixer non rilevato — outputdevice nel XML non aggiornato")
 
         self._set_status(Status.DONE)
         return True

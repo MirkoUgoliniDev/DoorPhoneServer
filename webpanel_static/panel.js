@@ -46,6 +46,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.page==='chimaai')loadORModels();
     if(t.dataset.page==='crontab')loadCron();
     if(t.dataset.page==='log2ram'){loadLog2Ram();}else{stopLog2RamPoll();}
+    if(t.dataset.page==='esp32'){startESP32Poll();}else{stopESP32Poll();}
   });
 });
 
@@ -2156,6 +2157,81 @@ function log2ramInstall(){
       .catch(()=>{
         if(btn){btn.disabled=false;btn.innerHTML='<i class="bi bi-download"></i> Installa Log2Ram';}
         toastCenter('Errore di rete durante installazione',false);
+      });
+  });
+}
+
+// --- ESP32-S3 ---
+let esp32PollTimer=null;
+
+function startESP32Poll(){
+  pollESP32();
+  if(!esp32PollTimer)esp32PollTimer=setInterval(pollESP32,2000);
+}
+function stopESP32Poll(){
+  if(esp32PollTimer){clearInterval(esp32PollTimer);esp32PollTimer=null;}
+}
+
+function pollESP32(){
+  fetch('/panel/api/esp32/status').then(r=>r.json()).then(d=>{
+    const dot=document.getElementById('esp32Dot');
+    const lbl=document.getElementById('esp32Status');
+    if(dot&&lbl){
+      dot.style.background=d.connected?'#22c55e':'#ef4444';
+      lbl.style.color=d.connected?'#22c55e':'#ef4444';
+      lbl.textContent=d.connected?'Connesso':'Disconnesso';
+    }
+    // disabilita i controlli se non connesso
+    const fan=document.getElementById('fanSlider');
+    const fanBtn=document.querySelector('button[onclick="esp32FanSet()"]');
+    const door=document.getElementById('btnDoor');
+    [fan,fanBtn,door].forEach(el=>{if(el){el.disabled=!d.connected;el.style.opacity=d.connected?'1':'0.4';}});
+    const pins=d.pins||{};
+    function setLed(id,pin){
+      const el=document.getElementById(id);
+      if(!el)return;
+      const pressed=pins[pin]===0; // active-low: 0 = premuto
+      el.style.background=pressed?'#22c55e':'var(--dim)';
+      el.style.boxShadow=pressed?'0 0 8px #22c55e':'none';
+    }
+    setLed('ledP1','p1');
+    setLed('ledP2','p2');
+    setLed('ledP3','p3');
+    const log=d.card_log||[];
+    const area=document.getElementById('esp32CardLog');
+    if(area&&log.length>0){
+      area.value=log.slice().reverse().map(e=>{
+        const t=new Date(e.time).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        return '['+t+'] '+e.result+(e.result==='OK'?' — accesso concesso':' — accesso negato');
+      }).join('\n');
+    }
+  }).catch(()=>{});
+}
+
+function esp32FanSet(){
+  const slider=document.getElementById('fanSlider');
+  if(!slider)return;
+  const duty=parseInt(slider.value,10);
+  fetch('/panel/api/esp32/fan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'duty='+duty})
+    .then(r=>r.json())
+    .then(d=>toastCenter(d.ok?'Ventola impostata a '+duty+'%':(d.error||'Errore invio comando'),d.ok))
+    .catch(()=>toastCenter('Errore di rete',false));
+}
+
+function esp32Door(){
+  confirmModal('Apri Portone','Inviare il comando di apertura portone all\'ESP32-S3?','warn','danger','Apri').then(ok=>{
+    if(!ok)return;
+    const btn=document.getElementById('btnDoor');
+    if(btn){btn.disabled=true;}
+    fetch('/panel/api/esp32/door',{method:'POST'})
+      .then(r=>r.json())
+      .then(d=>{
+        toastCenter(d.ok?'Impulso portone inviato':(d.error||'Errore invio comando'),d.ok);
+        if(btn){setTimeout(()=>{btn.disabled=false;},d.ok?3000:0);}
+      })
+      .catch(()=>{
+        toastCenter('Errore di rete',false);
+        if(btn){btn.disabled=false;}
       });
   });
 }

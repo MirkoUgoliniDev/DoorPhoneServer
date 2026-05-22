@@ -1,0 +1,23 @@
+{
+  "summary": "Aggiorna la lista pacchetti e installa tutte le dipendenze di sistema necessarie.",
+  "sections": [
+    {
+      "label": "INSTALLA",
+      "color": "green",
+      "items": [
+        "libopenal-dev, libopus-dev — librerie audio OpenAL e Opus",
+        "libasound2-dev, alsa-utils — ALSA (gestione schede audio)",
+        "git — clonazione repository",
+        "ffmpeg, mplayer — riproduzione audio/video",
+        "screen — sessioni terminale persistenti",
+        "mumble-server — server VoIP Mumble (Murmur)",
+        "build-essential — compilatore C/C++ e strumenti build",
+        "curl, wget, openssl, ca-certificates — trasferimento file e TLS",
+        "python3-tk, python3-flask — interfaccia wizard e web panel",
+        "rsync — richiesto da Log2Ram con JOURNALD_AWARE",
+        "python3-dotenv — lettura file .env"
+      ]
+    }
+  ],
+  "note": "Richiede connessione Internet. In caso di fallimento vengono effettuati fino a 2 tentativi automatici."
+}

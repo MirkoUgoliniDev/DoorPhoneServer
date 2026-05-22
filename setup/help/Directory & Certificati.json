@@ -1,0 +1,24 @@
+{
+  "summary": "Crea le directory dati, genera il certificato TLS e copia doorphoneserver.xml aggiornando il path del certificato.",
+  "sections": [
+    {
+      "label": "CREA",
+      "color": "green",
+      "items": [
+        "/home/doorphoneserver/preferences/ — directory file JSON di configurazione",
+        "/home/doorphoneserver/preferences/alarms.json — configurazione allarmi",
+        "/home/doorphoneserver/preferences/ai.json — configurazione AI",
+        "/home/doorphoneserver/cert.pem + nopasskey.pem — certificato TLS RSA 4096-bit, valido 3 anni",
+        "/home/doorphoneserver/mumble.pem — certificato unificato (chiave + cert) per Mumble"
+      ]
+    },
+    {
+      "label": "AGGIORNA doorphoneserver.xml",
+      "color": "blue",
+      "items": [
+        "<certificate> → /home/doorphoneserver/mumble.pem"
+      ]
+    }
+  ],
+  "note": "I file JSON preferences non vengono sovrascritti se già esistenti (cp -n). Il XML viene sempre riscritto con il path corretto del certificato."
+}

@@ -12,7 +12,6 @@ from steps.clone_build  import StepCloneAndBuild
 from steps.data_dir     import StepDataDir
 from steps.systemd      import StepSystemdService
 from steps.log2ram      import StepLog2Ram
-from steps.code_server  import StepCodeServer
 from steps.env_config   import StepEnvConfig
 from steps.cleanup      import StepCleanup
 
@@ -23,8 +22,8 @@ from lib.step_base import Step
 def build_steps() -> List[Step]:
     return [
         StepSystemCheck(),
-        StepHostname(),
         StepEnvConfig(),
+        StepHostname(),
         StepCreateUser(),
         StepPackages(),
         StepGolang(),
@@ -35,6 +34,5 @@ def build_steps() -> List[Step]:
         StepDataDir(),
         StepSystemdService(),
         StepLog2Ram(),
-        StepCodeServer(),
         StepCleanup(),
     ]

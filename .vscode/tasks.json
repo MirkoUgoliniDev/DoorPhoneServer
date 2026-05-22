@@ -1,0 +1,46 @@
+// VSCode extensions required (install via Ctrl+Shift+X):
+//   golang.go              — Go language server (gopls), debug, format, lint
+//   neonxp.gotools         — extra Go commands in the command palette
+//   seunlanlege.action-buttons — Build/Restart/Status buttons in the status bar
+//   ms-vscode-remote.remote-ssh — SSH connection to the Raspberry Pi
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Refresh Lint",
+            "type": "shell",
+            "command": "golangci-lint run ./... 2>&1 | tee /tmp/lint-results.txt; echo '--- Done ---'",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build DoorPhoneServer",
+            "type": "shell",
+            "command": "./setup/scripts/build.sh",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ]
+}

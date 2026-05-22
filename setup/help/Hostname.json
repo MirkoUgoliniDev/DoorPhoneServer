@@ -1,0 +1,14 @@
+{
+  "summary": "Imposta il nome host del Raspberry Pi visibile sulla rete locale.",
+  "sections": [
+    {
+      "label": "MODIFICA",
+      "color": "blue",
+      "items": [
+        "hostnamectl set-hostname <nome scelto>",
+        "/etc/hosts — aggiunge la riga 127.0.1.1 → <nome scelto>"
+      ]
+    }
+  ],
+  "note": "Il nome host diventa attivo immediatamente. Il default è 'doorphoneserver'. Usare solo lettere, numeri e trattini."
+}

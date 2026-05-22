@@ -1,5 +1,6 @@
 """Passo 10 — Directory preferences e certificato TLS."""
 
+import re
 from pathlib import Path
 from lib.step_base import Step, Status
 from lib.constants import TK_USER, TK_GROUP, REPO_ROOT
@@ -48,13 +49,22 @@ class StepDataDir(Step):
         )
         runner.run(["bash", "-c", cert_cmd], user=TK_USER)
 
-        # --- doorphoneserver.xml (versionato nella root del repo) ---
+        # --- doorphoneserver.xml: copia dal repo e aggiorna certificate ---
         xml_src = REPO_ROOT / "doorphoneserver.xml"
         xml_dst = home / "doorphoneserver.xml"
-        if xml_src.exists():
-            runner.log("  Copia doorphoneserver.xml in home...")
-            runner.run(["cp", str(xml_src), str(xml_dst)], sudo=True)
-            runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(xml_dst)], sudo=True)
+        cert_path = str(home / "mumble.pem")
+
+        if xml_src.exists() or runner.dry_run:
+            runner.log("  Scrittura doorphoneserver.xml in home...")
+            if runner.dry_run:
+                runner.log(f"  [DRY-RUN] XML certificate → {cert_path}")
+            else:
+                content = xml_src.read_text(encoding="utf-8")
+                content = re.sub(r'<certificate\s*/>', f'<certificate>{cert_path}</certificate>', content)
+                content = re.sub(r'<certificate>[^<]*</certificate>', f'<certificate>{cert_path}</certificate>', content)
+                runner.log(f"  ✓ XML certificate → {cert_path}")
+                runner.write(xml_dst, content, sudo=True)
+                runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(xml_dst)], sudo=True)
         else:
             runner.log(f"  ⚠ doorphoneserver.xml non trovato in {xml_src}")
 

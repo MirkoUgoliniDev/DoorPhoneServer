@@ -93,6 +93,27 @@ def best_card_pair() -> Tuple[Optional[AudioCard], Optional[AudioCard]]:
     return best_play, best_cap
 
 
+def get_playback_control(card_index: int) -> str:
+    """Ritorna il nome del primo controllo mixer con Playback sulla scheda indicata."""
+    if not shutil.which("amixer"):
+        return ""
+    try:
+        out = subprocess.run(
+            ["amixer", "-c", str(card_index), "scontents"],
+            capture_output=True, text=True, timeout=5
+        ).stdout
+        current = None
+        for line in out.splitlines():
+            m = re.match(r"Simple mixer control '(.+?)',", line)
+            if m:
+                current = m.group(1)
+            elif current and "Playback" in line:
+                return current
+    except Exception:
+        pass
+    return ""
+
+
 def validate_card_index(value, cards: List[AudioCard]) -> int:
     """Valida e normalizza l'indice scheda. Ritorna 0 su valore non valido."""
     try:

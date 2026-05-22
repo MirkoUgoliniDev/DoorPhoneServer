@@ -1,0 +1,29 @@
+{
+  "summary": "Rileva le schede audio collegate, configura ALSA e aggiorna il controllo mixer nel file di configurazione.",
+  "sections": [
+    {
+      "label": "CREA / MODIFICA",
+      "color": "green",
+      "items": [
+        "/etc/asound.conf — configura OUTPUT (dmixed) e INPUT (dsnooped) come device ALSA di default"
+      ]
+    },
+    {
+      "label": "AGGIORNA doorphoneserver.xml (solo output)",
+      "color": "blue",
+      "items": [
+        "<outputdevice> → nome del controllo mixer rilevato (es. 'Speaker')",
+        "<outputvolcontroldevice> → nome del controllo volume (es. 'Speaker')",
+        "<outputmutecontroldevice> → nome del controllo mute (es. 'Speaker')"
+      ]
+    },
+    {
+      "label": "INPUT NON NEL XML",
+      "color": "muted",
+      "items": [
+        "Il microfono non ha un campo dedicato nel XML — l'app usa il device ALSA di default (pcm.!default) che asound.conf instrda alla scheda di input rilevata"
+      ]
+    }
+  ],
+  "note": "Se non vengono rilevate schede audio il passo viene saltato senza errore. La configurazione OpenAL (alsoft.conf) è gestita dallo step 'Config Boot RPi'."
+}

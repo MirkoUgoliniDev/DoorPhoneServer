@@ -1,0 +1,24 @@
+{
+  "summary": "Crea l'utente di sistema 'doorphoneserver' dedicato all'esecuzione del servizio.",
+  "sections": [
+    {
+      "label": "CREA",
+      "color": "green",
+      "items": [
+        "Utente 'doorphoneserver' con home in /home/doorphoneserver/",
+        "Directory GOPATH: /home/doorphoneserver/gocode/",
+        "Directory GOBIN:  /home/doorphoneserver/bin/"
+      ]
+    },
+    {
+      "label": "AGGIUNGE AI GRUPPI",
+      "color": "blue",
+      "items": [
+        "audio   — accesso alle schede audio ALSA",
+        "gpio    — accesso ai pin GPIO del Raspberry Pi",
+        "dialout — porta seriale USB (ESP32-S3 per GPIO esteso e RFID)"
+      ]
+    }
+  ],
+  "note": "Se l'utente esiste già viene saltata la creazione, ma i gruppi vengono comunque verificati. Il gruppo 'video' non è necessario: la camera è una IP camera RTSP esterna, non una camera CSI."
+}

@@ -33,4 +33,4 @@ APT_PACKAGES = [
 
 # "sudo" rimosso: doorphoneserver non deve avere sudo pieno.
 # L'accesso privilegiato è gestito tramite /etc/sudoers.d/doorphoneserver-*
-USER_GROUPS = ["audio", "gpio", "i2c", "spi", "video", "dialout"]
+USER_GROUPS = ["audio", "gpio", "dialout"]

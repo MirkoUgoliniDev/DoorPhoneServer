@@ -1,0 +1,38 @@
+{
+  "summary": "Installa il servizio systemd, configura i permessi sudo per il web panel e imposta il crontab.",
+  "sections": [
+    {
+      "label": "INSTALLA E ABILITA",
+      "color": "green",
+      "items": [
+        "/etc/systemd/system/doorphoneserver.service — avvio automatico al boot",
+        "systemctl enable doorphoneserver"
+      ]
+    },
+    {
+      "label": "CONFIGURA SUDO (NOPASSWD)",
+      "color": "blue",
+      "items": [
+        "/usr/bin/systemctl — il web panel può avviare/fermare/riavviare il servizio",
+        "restart_tablet.sh — riavvio remoto del tablet dall'interfaccia web"
+      ]
+    },
+    {
+      "label": "CRONTAB",
+      "color": "blue",
+      "items": [
+        "Riavvio notturno automatico del servizio",
+        "Restart periodico del tablet"
+      ]
+    },
+    {
+      "label": "FILE MODIFICATI",
+      "color": "muted",
+      "items": [
+        "/etc/systemd/system/doorphoneserver.service",
+        "/etc/sudoers.d/doorphoneserver-panel"
+      ]
+    }
+  ],
+  "note": "Il servizio non viene avviato immediatamente — partirà al prossimo riavvio o con 'systemctl start doorphoneserver'."
+}

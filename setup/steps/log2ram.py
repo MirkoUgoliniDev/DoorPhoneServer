@@ -58,12 +58,12 @@ class StepLog2Ram(Step):
             except PermissionError:
                 existing_l2r = ""
             l2r_settings = {
-                "SIZE":            "128M",
-                "PATH_DISK":       '"/var/log"',
-                "JOURNALD_AWARE":  "true",
-                "ZL2R":            "false",
-                "COMP_ALG":        "lz4",
-                "LOG_DISK_SIZE":   "256M",
+                "SIZE":          config.get("log2ram_size", "128M"),
+                "PATH_DISK":     '"/var/log"',
+                "JOURNALD_AWARE": "true",
+                "ZL2R":          "true" if config.get("log2ram_zl2r", False) else "false",
+                "COMP_ALG":      config.get("log2ram_comp_alg", "lz4"),
+                "LOG_DISK_SIZE": config.get("log2ram_log_disk_size", "256M"),
             }
             l2r_lines = existing_l2r.splitlines()
             seen_keys = set()

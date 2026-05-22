@@ -32,6 +32,7 @@ require (
 
 require (
 	github.com/MirkoUgoliniDev/gopus v0.0.0-20260516092137-6153a6b1be78 // indirect
+	github.com/creack/goselect v0.1.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
@@ -49,6 +50,7 @@ require (
 	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pion/turn/v4 v4.1.4 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
+	go.bug.st/serial v1.6.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/time v0.10.0 // indirect

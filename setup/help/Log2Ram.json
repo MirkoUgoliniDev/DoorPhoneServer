@@ -1,0 +1,38 @@
+{
+  "summary": "Installa Log2Ram per spostare /var/log in RAM, proteggendo la microSD dalle scritture continue.",
+  "sections": [
+    {
+      "label": "INSTALLA",
+      "color": "green",
+      "items": [
+        "log2ram da repository azlux.fr",
+        "Script /usr/local/sbin/doorphoneserver-log2ram-setsize.sh (usato dal web panel)"
+      ]
+    },
+    {
+      "label": "CONFIGURA",
+      "color": "blue",
+      "items": [
+        "SIZE — dimensione RAM usata per i log (default 128M, configurabile)",
+        "ZL2R — compressione log in RAM (lz4, lzo, zstd, zlib — opzionale)",
+        "LOG_DISK_SIZE — dimensione backup su disco (default 256M)",
+        "journald: Storage=volatile, RuntimeMaxUse=50M, MaxRetentionSec=2week"
+      ]
+    },
+    {
+      "label": "ABILITA SERVIZIO",
+      "color": "green",
+      "items": [
+        "log2ram.service — avvio automatico al boot"
+      ]
+    },
+    {
+      "label": "ELIMINA",
+      "color": "red",
+      "items": [
+        "/var/log/journal/ — forza il journal in modalità volatile (solo RAM)"
+      ]
+    }
+  ],
+  "note": "Passo opzionale ma fortemente consigliato: le microSD si degradano rapidamente con scritture continue di log."
+}
