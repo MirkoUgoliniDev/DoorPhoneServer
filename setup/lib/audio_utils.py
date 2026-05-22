@@ -17,6 +17,24 @@ class AudioCard:
         return f"card {self.index}: {self.name}"
 
 
+def get_card_channels(card: int, dev: int = 0, stream: str = "capture") -> int:
+    """Ritorna il numero di canali supportati dalla scheda (1 o 2).
+    Legge /proc/asound senza aprire il device (funziona anche se è già in uso)."""
+    section = "Capture" if stream == "capture" else "Playback"
+    for stream_idx in range(4):
+        try:
+            text = open(f"/proc/asound/card{card}/stream{stream_idx}").read()
+            idx = text.find(f"{section}:")
+            if idx == -1:
+                continue
+            m = re.search(r"Channels:\s+(\d+)", text[idx:])
+            if m:
+                return max(1, int(m.group(1)))
+        except Exception:
+            break
+    return 1
+
+
 def _is_usb_card(index: int) -> bool:
     """Controlla se la scheda è connessa via USB tramite sysfs."""
     try:
@@ -131,6 +149,8 @@ def generate_asound_conf(
     pd = max(0, min(3, play_dev))
     cc = max(0, min(9, cap_card))
     cd = max(0, min(3, cap_dev))
+    play_ch = get_card_channels(pc, pd, stream="playback")
+    cap_ch  = get_card_channels(cc, cd, stream="capture")
 
     return f"""# Generato da DoorPhoneServer Setup Wizard
 pcm.dmixed {{
@@ -144,7 +164,7 @@ pcm.dmixed {{
         device {pd}
         subdevice 0
         format S16_LE
-        channels 2
+        channels {play_ch}
         rate 48000
     }}
 }}
@@ -160,7 +180,7 @@ pcm.dsnooped {{
         device {cd}
         subdevice 0
         format S16_LE
-        channels 1
+        channels {cap_ch}
         rate 48000
     }}
 }}
