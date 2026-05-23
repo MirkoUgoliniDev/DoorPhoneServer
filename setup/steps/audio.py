@@ -17,9 +17,7 @@ class StepAudioConfig(Step):
     def execute(self, runner, sysinfo, config):
         self._set_status(Status.RUNNING)
 
-        if not runner.dry_run and (
-            config.get("play_card") is None or config.get("_audio_autodetect")
-        ):
+        if config.get("play_card") is None or config.get("_audio_autodetect"):
             runner.log("  Rilevo schede audio...")
             play_card_obj, cap_card_obj = best_card_pair()
             if play_card_obj:
@@ -55,7 +53,8 @@ class StepAudioConfig(Step):
         # Aggiorna outputdevice nel XML sorgente (verrà copiato da StepDataDir)
         xml_src = REPO_ROOT / "doorphoneserver.xml"
         if runner.dry_run:
-            runner.log("  [DRY-RUN] XML outputdevice → (controllo mixer rilevato)")
+            ctrl = get_playback_control(play_card)
+            runner.log(f"  [DRY-RUN] XML outputdevice → {ctrl or '(nessun controllo mixer rilevato)'}")
         elif xml_src.exists():
             ctrl = get_playback_control(play_card)
             if ctrl:

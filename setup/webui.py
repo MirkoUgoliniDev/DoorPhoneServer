@@ -128,6 +128,7 @@ HTML = r"""<!DOCTYPE html>
   .step-desc.visible{ display:block; }
   @keyframes sec-flash { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 3px var(--accent)} }
   .sec-highlight{ animation:sec-flash .5s ease 2; }
+  .sec-selected{ box-shadow:0 0 0 2px var(--accent); }
   .card { border: 1px solid transparent; }
   .card-running { border-color:var(--accent) !important; }
   .card-done    { border-color:var(--success) !important; }
@@ -170,9 +171,12 @@ HTML = r"""<!DOCTYPE html>
 
 <!-- SIDEBAR -->
 <aside class="sidebar w-56 flex-shrink-0 p-4 flex flex-col">
-  <div class="mb-6">
-    <div class="text-lg font-bold" style="color:var(--accent)">DoorPhoneServer</div>
-    <div class="text-xs mt-1" style="color:var(--muted)">Setup Wizard v{{ version }}</div>
+  <div class="mb-6 flex items-center gap-3">
+    <img src="/logo.svg" alt="logo" width="48" height="48" style="flex-shrink:0;border-radius:50%">
+    <div>
+      <div class="text-base font-bold leading-tight" style="color:var(--accent)">DoorPhoneServer</div>
+      <div class="text-xs mt-0.5" style="color:var(--muted)">Setup Wizard v{{ version }}</div>
+    </div>
   </div>
   <div class="text-xs font-bold mb-2 tracking-widest" style="color:var(--muted)">PASSI</div>
   <ul id="stepList" class="space-y-0 flex-1">
@@ -349,7 +353,7 @@ HTML = r"""<!DOCTYPE html>
         </div>
         <div class="col-span-2 mt-1 flex gap-2 flex-wrap" style="grid-column:1/-1">
           <button onclick="refreshCards(this)" class="btn-primary" style="background:#45475a;color:#cdd6f4;font-size:.85rem;padding:.4rem 1.1rem">↺ Aggiorna schede</button>
-          <button onclick="openAudioModal()" class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">🔊 Test Audio &amp; Volumi</button>
+          <button id="testAudioBtn" onclick="openAudioModal()" class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">🔊 Test Audio &amp; Volumi</button>
         </div>
       </div>
 
@@ -731,7 +735,8 @@ function abortInstall() {
 
 function stepLabelClick(name, labelEl) {
   if (!DRY_RUN) return;
-  const descEl = labelEl.closest('li').querySelector('.step-desc');
+  const liEl = labelEl.closest('li');
+  const descEl = liEl.querySelector('.step-desc');
 
   // toggle descrizione inline
   const showing = descEl.classList.contains('visible');
@@ -745,11 +750,17 @@ function stepLabelClick(name, labelEl) {
   const stepIdx = parseInt(labelEl.dataset.step);
   const card = document.getElementById('step-card-' + stepIdx);
   if (card) {
+    // rimuovi selezione precedente
+    document.querySelectorAll('.card.sec-selected').forEach(c => c.classList.remove('sec-selected'));
     card.scrollIntoView({behavior:'smooth', block:'start'});
     card.classList.remove('sec-highlight');
     void card.offsetWidth;
     card.classList.add('sec-highlight');
-    setTimeout(() => card.classList.remove('sec-highlight'), 1100);
+    // al termine del lampeggio mantieni il bordo
+    setTimeout(() => {
+      card.classList.remove('sec-highlight');
+      card.classList.add('sec-selected');
+    }, 1100);
   }
 }
 
@@ -841,6 +852,14 @@ function refreshCards(btn) {
       const selPlay = d.play_cards.find(c => c.index === (parseInt(document.getElementById('playCard').value)||0));
       const selCap  = d.cap_cards.find( c => c.index === (parseInt(document.getElementById('capCard').value) ||0));
       _setVuStereoMode((selCap?.channels || 1) > 1, (selPlay?.channels || 1) > 1);
+      // Disabilita il test audio se nessuna scheda rilevata
+      const noCards = d.play_cards.length === 0 && d.cap_cards.length === 0;
+      const testBtn = document.getElementById('testAudioBtn');
+      if (testBtn) {
+        testBtn.disabled = noCards;
+        testBtn.style.opacity = noCards ? '0.4' : '';
+        testBtn.style.cursor  = noCards ? 'not-allowed' : '';
+      }
       if (btn) { btn.disabled = false; btn.textContent = '↺ Aggiorna schede'; }
     })
     .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Aggiorna schede'; } });
@@ -1921,6 +1940,17 @@ def audio_set_volume():
                         "error": r.stderr.strip()[:100] if r.returncode != 0 else ""})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+# ── Logo ─────────────────────────────────────────────────────────────────────
+
+@app.route("/logo.svg")
+def serve_logo():
+    logo_path = os.path.join(os.path.dirname(_HERE), "logo.svg")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            return f.read(), 200, {"Content-Type": "image/svg+xml", "Cache-Control": "max-age=3600"}
+    return "", 404
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

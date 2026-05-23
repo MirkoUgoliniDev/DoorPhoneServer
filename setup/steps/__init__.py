@@ -22,9 +22,9 @@ from lib.step_base import Step
 def build_steps() -> List[Step]:
     return [
         StepSystemCheck(),
-        StepEnvConfig(),
         StepHostname(),
         StepCreateUser(),
+        StepEnvConfig(),
         StepPackages(),
         StepGolang(),
         StepAudioConfig(),

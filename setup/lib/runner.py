@@ -165,6 +165,7 @@ class Runner:
                 tmp = Path(f.name)
 
             if sudo and os.geteuid() != 0:
+                self.run(["mkdir", "-p", str(path.parent)], sudo=True)
                 ok, _ = self.run(["cp", str(tmp), str(path)], sudo=True)
                 return ok
             else:

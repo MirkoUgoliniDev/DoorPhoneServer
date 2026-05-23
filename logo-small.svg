@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <radialGradient id="bg2" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#2a2b3d"/>
+      <stop offset="100%" stop-color="#11111b"/>
+    </radialGradient>
+    <linearGradient id="panel2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d3f55"/>
+      <stop offset="100%" stop-color="#26273a"/>
+    </linearGradient>
+    <radialGradient id="btn2" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#b3ceff"/>
+      <stop offset="100%" stop-color="#5a8fe0"/>
+    </radialGradient>
+    <radialGradient id="lens2" cx="35%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#4a5a7a"/>
+      <stop offset="100%" stop-color="#0d1320"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Sfondo -->
+  <circle cx="32" cy="32" r="30" fill="url(#bg2)"/>
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#89b4fa" stroke-width="1.5" opacity="0.7"/>
+
+  <!-- Pannello citofono -->
+  <rect x="16" y="10" width="28" height="44" rx="5" fill="url(#panel2)" stroke="#4a4d6a" stroke-width="1"/>
+
+  <!-- Camera -->
+  <circle cx="30" cy="21" r="7"  fill="#1e1f2e" stroke="#4a4d6a" stroke-width="1"/>
+  <circle cx="30" cy="21" r="5"  fill="url(#lens2)"/>
+  <circle cx="28" cy="19" r="1.5" fill="white" opacity="0.1"/>
+  <circle cx="30" cy="21" r="2"  fill="#0a0d18"/>
+  <!-- LED verde -->
+  <circle cx="35" cy="15" r="1.5" fill="#a6e3a1" opacity="0.9"/>
+
+  <!-- Speaker (3 linee) -->
+  <line x1="20" y1="31" x2="40" y2="31" stroke="#4a4d6a" stroke-width="1" stroke-linecap="round"/>
+  <line x1="20" y1="34" x2="40" y2="34" stroke="#4a4d6a" stroke-width="1" stroke-linecap="round"/>
+  <line x1="20" y1="37" x2="40" y2="37" stroke="#4a4d6a" stroke-width="1" stroke-linecap="round"/>
+
+  <!-- Pulsante -->
+  <circle cx="30" cy="46" r="5"  fill="url(#btn2)" opacity="0.9"/>
+  <circle cx="30" cy="46" r="5"  fill="none" stroke="#c0d8ff" stroke-width="0.8" opacity="0.5"/>
+
+  <!-- Onde sonore -->
+  <path d="M 47 26 Q 51 32 47 38" stroke="#a6e3a1" stroke-width="2"   fill="none" stroke-linecap="round" opacity="0.9"/>
+  <path d="M 51 21 Q 57 32 51 43" stroke="#a6e3a1" stroke-width="1.3" fill="none" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Dot stato -->
+  <circle cx="41" cy="46" r="2.5" fill="#a6e3a1" opacity="0.85"/>
+</svg>

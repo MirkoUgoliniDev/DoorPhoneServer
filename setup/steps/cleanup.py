@@ -4,6 +4,7 @@ import os
 import shutil
 from pathlib import Path
 from lib.step_base import Step, Status
+from lib.constants import REPO_ROOT
 
 
 class StepCleanup(Step):
@@ -35,7 +36,6 @@ class StepCleanup(Step):
         runner.run(["apt-get", "clean"], sudo=True)
 
         # Messaggio finale: la cartella setup non può essere rimossa mentre il wizard gira
-        setup_dir = runner_home / "doorphoneserver-setup"
         runner.log("")
         runner.log("  ╔══════════════════════════════════════════════════════════╗")
         runner.log("  ║  PULIZIA MANUALE RICHIESTA DOPO LA CHIUSURA DEL WIZARD  ║")
@@ -44,8 +44,8 @@ class StepCleanup(Step):
         runner.log(f"  ║  perché il wizard è in esecuzione al suo interno.       ║")
         runner.log("  ║                                                          ║")
         runner.log("  ║  Dopo aver chiuso il wizard, esegui:                    ║")
-        runner.log(f"  ║    rm -rf {setup_dir}                 ║")
         runner.log("  ╚══════════════════════════════════════════════════════════╝")
+        runner.log(f"    rm -rf {REPO_ROOT}")
 
         self._set_status(Status.DONE)
         return True
