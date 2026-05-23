@@ -1970,11 +1970,13 @@ def run_webui(port: int = 8888, dry_run: bool = False):
             LOG_FILE.open("a").close()
         except PermissionError:
             LOG_FILE.unlink(missing_ok=True)
-    logging.basicConfig(
-        filename=str(LOG_FILE),
-        level=logging.DEBUG,
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            filename=str(LOG_FILE),
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(message)s",
+        )
 
     # Determina l'IP locale per mostrare l'URL
     import socket
@@ -1997,7 +1999,14 @@ def run_webui(port: int = 8888, dry_run: bool = False):
     print("=" * 60)
     print()
 
-    app.run(host="0.0.0.0", port=port, threaded=True, debug=False)
+    try:
+        app.run(host="0.0.0.0", port=port, threaded=True, debug=False)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"\n  ✗ Porta {port} già in uso — un'altra istanza del wizard è in esecuzione.")
+            print(f"  Fermala con: kill $(lsof -ti:{port})")
+        else:
+            raise
 
 
 if __name__ == "__main__":

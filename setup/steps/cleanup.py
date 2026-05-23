@@ -4,7 +4,6 @@ import os
 import shutil
 from pathlib import Path
 from lib.step_base import Step, Status
-from lib.constants import REPO_ROOT
 
 
 class StepCleanup(Step):
@@ -35,17 +34,9 @@ class StepCleanup(Step):
         runner.log("  apt-get clean...")
         runner.run(["apt-get", "clean"], sudo=True)
 
-        # Messaggio finale: la cartella setup non può essere rimossa mentre il wizard gira
         runner.log("")
-        runner.log("  ╔══════════════════════════════════════════════════════════╗")
-        runner.log("  ║  PULIZIA MANUALE RICHIESTA DOPO LA CHIUSURA DEL WIZARD  ║")
-        runner.log("  ╠══════════════════════════════════════════════════════════╣")
-        runner.log(f"  ║  La cartella di setup non può essere rimossa ora        ║")
-        runner.log(f"  ║  perché il wizard è in esecuzione al suo interno.       ║")
-        runner.log("  ║                                                          ║")
-        runner.log("  ║  Dopo aver chiuso il wizard, esegui:                    ║")
-        runner.log("  ╚══════════════════════════════════════════════════════════╝")
-        runner.log(f"    rm -rf {REPO_ROOT}")
+        runner.log("  ✓ Installazione completata.")
+        runner.log("  Puoi chiudere il browser e fermare il wizard con Ctrl+C.")
 
         self._set_status(Status.DONE)
         return True
