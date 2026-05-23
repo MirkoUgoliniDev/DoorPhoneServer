@@ -28,6 +28,7 @@ APT_PACKAGES = [
     "build-essential", "curl", "wget", "openssl", "ca-certificates",
     "python3-tk", "python3-flask",
     "rsync",           # richiesto da log2ram con JOURNALD_AWARE=true
+    "lz4",             # richiesto da log2ram con ZL2R=true
     "python3-dotenv",  # lettura file .env
 ]
 

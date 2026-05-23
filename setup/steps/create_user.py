@@ -15,11 +15,9 @@ class StepCreateUser(Step):
     def execute(self, runner, sysinfo, config):
         self._set_status(Status.RUNNING)
 
-        exists = False
-        if not runner.dry_run:
-            exists = subprocess.run(
-                ["id", TK_USER], capture_output=True
-            ).returncode == 0
+        exists = subprocess.run(
+            ["id", TK_USER], capture_output=True
+        ).returncode == 0
 
         if not exists:
             ok, _ = runner.run(["useradd", "-m", "-s", "/bin/bash", TK_USER], sudo=True)
@@ -31,13 +29,12 @@ class StepCreateUser(Step):
             runner.log(f"  Utente {TK_USER} già presente")
 
         for g in USER_GROUPS:
-            if not runner.dry_run:
-                group_exists = subprocess.run(
-                    ["getent", "group", g], capture_output=True
-                ).returncode == 0
-                if not group_exists:
-                    runner.log(f"  ⚠ Gruppo '{g}' non esiste, skip")
-                    continue
+            group_exists = subprocess.run(
+                ["getent", "group", g], capture_output=True
+            ).returncode == 0
+            if not group_exists:
+                runner.log(f"  ⚠ Gruppo '{g}' non esiste, skip")
+                continue
             runner.run(["usermod", "-aG", g, TK_USER], sudo=True)
 
         # Home dir world-executable (755) per permettere ad altri utenti

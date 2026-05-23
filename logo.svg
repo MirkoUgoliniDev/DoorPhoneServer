@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Sfondo cerchio con gradiente -->
+    <radialGradient id="bgGrad" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#2a2b3d"/>
+      <stop offset="100%" stop-color="#11111b"/>
+    </radialGradient>
+
+    <!-- Gradiente pannello citofono -->
+    <linearGradient id="panelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d3f55"/>
+      <stop offset="100%" stop-color="#26273a"/>
+    </linearGradient>
+
+    <!-- Gradiente lente camera -->
+    <radialGradient id="lensGrad" cx="35%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#4a5a7a"/>
+      <stop offset="60%" stop-color="#1a2235"/>
+      <stop offset="100%" stop-color="#0d1320"/>
+    </radialGradient>
+
+    <!-- Gradiente pulsante -->
+    <radialGradient id="btnGrad" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#b3ceff"/>
+      <stop offset="100%" stop-color="#5a8fe0"/>
+    </radialGradient>
+
+    <!-- Ombra pannello -->
+    <filter id="panelShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Glow azzurro -->
+    <filter id="blueGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Glow verde -->
+    <filter id="greenGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- ── Cerchio di sfondo ── -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)"/>
+  <circle cx="100" cy="100" r="96" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity="0.7"/>
+
+  <!-- ── Pannello citofono ── -->
+  <rect x="56" y="34" width="88" height="132" rx="12" ry="12"
+        fill="url(#panelGrad)" filter="url(#panelShadow)"/>
+
+  <!-- Bordo pannello -->
+  <rect x="56" y="34" width="88" height="132" rx="12" ry="12"
+        fill="none" stroke="#4a4d6a" stroke-width="1.5"/>
+
+  <!-- Vite angoli pannello -->
+  <circle cx="65"  cy="43"  r="2.2" fill="#2a2c40" stroke="#5a5d7a" stroke-width="0.8"/>
+  <circle cx="135" cy="43"  r="2.2" fill="#2a2c40" stroke="#5a5d7a" stroke-width="0.8"/>
+  <circle cx="65"  cy="157" r="2.2" fill="#2a2c40" stroke="#5a5d7a" stroke-width="0.8"/>
+  <circle cx="135" cy="157" r="2.2" fill="#2a2c40" stroke="#5a5d7a" stroke-width="0.8"/>
+
+  <!-- ── Sezione camera ── -->
+  <!-- Cornice camera -->
+  <circle cx="100" cy="68" r="20" fill="#1e1f2e" stroke="#4a4d6a" stroke-width="1.5"/>
+  <!-- Lente camera -->
+  <circle cx="100" cy="68" r="15" fill="url(#lensGrad)"/>
+  <!-- Riflesso lente -->
+  <circle cx="94"  cy="62" r="4.5" fill="white" opacity="0.08"/>
+  <circle cx="92"  cy="61" r="2"   fill="white" opacity="0.12"/>
+  <!-- Iris camera -->
+  <circle cx="100" cy="68" r="6"  fill="#0a0d18"/>
+  <circle cx="100" cy="68" r="3"  fill="#1a2030"/>
+  <!-- LED camera attiva -->
+  <circle cx="113" cy="56" r="2.5" fill="#a6e3a1" filter="url(#greenGlow)" opacity="0.9"/>
+
+  <!-- ── Griglia speaker ── -->
+  <!-- Sfondo griglia -->
+  <rect x="68" y="95" width="64" height="32" rx="5" fill="#1e1f2e" stroke="#3a3d55" stroke-width="1"/>
+  <!-- Linee griglia -->
+  <line x1="72" y1="101" x2="128" y2="101" stroke="#4a4d6a" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="72" y1="106" x2="128" y2="106" stroke="#4a4d6a" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="72" y1="111" x2="128" y2="111" stroke="#4a4d6a" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="72" y1="116" x2="128" y2="116" stroke="#4a4d6a" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="72" y1="121" x2="128" y2="121" stroke="#4a4d6a" stroke-width="1.2" stroke-linecap="round"/>
+
+  <!-- ── Pulsante chiamata ── -->
+  <!-- Alone pulsante -->
+  <circle cx="100" cy="148" r="14" fill="#89b4fa" opacity="0.12"/>
+  <!-- Corpo pulsante -->
+  <circle cx="100" cy="148" r="11" fill="url(#btnGrad)" filter="url(#blueGlow)"/>
+  <!-- Bordo pulsante -->
+  <circle cx="100" cy="148" r="11" fill="none" stroke="#c0d8ff" stroke-width="1" opacity="0.6"/>
+  <!-- Icona campanello nel pulsante -->
+  <path d="M97 145 Q97 142 100 142 Q103 142 103 145 L104 149 Q104 150 103 150 L97 150 Q96 150 96 149 Z"
+        fill="#1e1e2e" opacity="0.85"/>
+  <line x1="100" y1="150" x2="100" y2="152" stroke="#1e1e2e" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+  <line x1="98.5" y1="152" x2="101.5" y2="152" stroke="#1e1e2e" stroke-width="1.5" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- ── Onde sonore (a destra del pannello) ── -->
+  <path d="M 148 90 Q 157 100 148 110"
+        stroke="#a6e3a1" stroke-width="2.8" fill="none"
+        stroke-linecap="round" filter="url(#greenGlow)" opacity="0.9"/>
+  <path d="M 153 83 Q 167 100 153 117"
+        stroke="#a6e3a1" stroke-width="2" fill="none"
+        stroke-linecap="round" opacity="0.65"/>
+  <path d="M 158 76 Q 176 100 158 124"
+        stroke="#a6e3a1" stroke-width="1.4" fill="none"
+        stroke-linecap="round" opacity="0.35"/>
+
+  <!-- ── Dot di stato (in basso a destra del pannello) ── -->
+  <circle cx="130" cy="148" r="4" fill="#a6e3a1" filter="url(#greenGlow)" opacity="0.85"/>
+  <circle cx="130" cy="148" r="2" fill="#d0ffd8"/>
+
+</svg>

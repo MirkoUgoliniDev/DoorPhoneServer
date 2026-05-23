@@ -38,7 +38,8 @@ BOOT_CFG="/boot/firmware/config.txt"
 [ -f "$BOOT_CFG" ] || BOOT_CFG="/boot/config.txt"
 if [ -f "$BOOT_CFG" ]; then
     cp "$BOOT_CFG" "$BOOT_CFG.bak.$(date +%Y%m%d)"
-    # Audio onboard off
+    # Audio onboard off (aggiunge la riga se assente, poi forza off)
+    grep -q "dtparam=audio" "$BOOT_CFG" || echo "dtparam=audio=off" >> "$BOOT_CFG"
     sed -i 's/^dtparam=audio=.*/dtparam=audio=off/' "$BOOT_CFG"
     # Bluetooth off
     grep -q "dtoverlay=disable-bt"    "$BOOT_CFG" || echo "dtoverlay=disable-bt"    >> "$BOOT_CFG"

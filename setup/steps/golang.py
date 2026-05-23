@@ -21,13 +21,13 @@ class StepGolang(Step):
 
         go_bin = Path("/usr/local/go/bin/go")
 
-        if not runner.dry_run and go_bin.exists():
+        if go_bin.exists():
             _, out = runner.run([str(go_bin), "version"])
             if GO_VERSION in out:
                 runner.log(f"  Go {GO_VERSION} già installato ✓")
                 self._set_status(Status.DONE)
                 return True
-            runner.log(f"  Versione attuale: {out.strip()} — aggiorno")
+            runner.log(f"  Versione attuale: {out.strip()} — {'(aggiornamento necessario)' if runner.dry_run else 'aggiorno'}")
 
         tarball = f"go{GO_VERSION}.linux-{sysinfo.go_arch}.tar.gz"
         url     = f"https://go.dev/dl/{tarball}"

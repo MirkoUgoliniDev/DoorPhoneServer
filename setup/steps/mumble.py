@@ -1,6 +1,8 @@
 """Passo 7 — Configura e avvia Mumble Server."""
 
+import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from lib.step_base import Step, Status
@@ -19,10 +21,24 @@ class StepMumbleServer(Step):
 
         script = REPO_ROOT / "setup" / "scripts" / "setup_mumble.sh"
         if script.exists():
-            # Passa MUMBLE_PASSWORD come variabile d'ambiente allo script bash
-            # (lo script NON usa read interattivo — legge solo da env)
-            mumble_env = {"MUMBLE_PASSWORD": config.get("env_mumble_password", "")}
-            ok, _ = runner.run(["bash", str(script)], user="root", env=mumble_env)
+            # Scrive MUMBLE_PASSWORD in un file temporaneo e passa il path
+            # come argomento ($1) allo script — evita env_reset di sudo che
+            # strippa le variabili d'ambiente custom.
+            pwd_file = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".env", delete=False, dir="/tmp"
+                ) as f:
+                    f.write(config.get("env_mumble_password", ""))
+                    pwd_file = f.name
+                os.chmod(pwd_file, 0o600)
+                ok, _ = runner.run(["bash", str(script), pwd_file], sudo=True)
+            finally:
+                if pwd_file and os.path.exists(pwd_file):
+                    try:
+                        os.unlink(pwd_file)
+                    except Exception:
+                        pass
             if not ok and not runner.dry_run:
                 runner.log("  ⚠ setup_mumble.sh ha avuto errori — il servizio potrebbe non partire")
         else:

@@ -6,7 +6,8 @@
 #   port=64738  (default Mumble)
 #   timeout=15
 #   bandwidth=72000
-#   serverpassword = da variabile d'ambiente MUMBLE_PASSWORD (o vuoto)
+#   serverpassword = da MUMBLE_PASSWORD_FILE (path al file con la password)
+#                    o da MUMBLE_PASSWORD (fallback legacy)
 
 # Niente set -e: ogni sezione è indipendente, un errore non blocca le altre
 echo "=== Setup mumble-server ==="
@@ -17,9 +18,13 @@ if ! dpkg -l mumble-server &>/dev/null; then
     apt-get install -y mumble-server || { echo "  ✗ installazione mumble-server fallita"; exit 1; }
 fi
 
-# Password server: usa variabile d'ambiente (passata dal wizard),
-# NON usare read interattivo (lo script gira non-interattivo via subprocess)
-MUMBLE_PASSWORD="${MUMBLE_PASSWORD:-}"
+# Legge la password da file passato come $1 (evita env_reset di sudo)
+# o da variabile MUMBLE_PASSWORD (fallback legacy / invocazione manuale)
+if [ -n "${1:-}" ] && [ -f "$1" ]; then
+    MUMBLE_PASSWORD="$(cat "$1")"
+else
+    MUMBLE_PASSWORD="${MUMBLE_PASSWORD:-}"
+fi
 
 # Scrivi configurazione
 cat > /etc/mumble-server.ini << CONF

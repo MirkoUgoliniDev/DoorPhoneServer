@@ -31,40 +31,31 @@ class StepSystemCheck(Step):
             )
             ok = False
 
-        if not runner.dry_run:
-            if os.geteuid() == 0:
-                runner.log("  Sudo     : esecuzione diretta come root")
+        if os.geteuid() == 0:
+            runner.log("  Sudo     : esecuzione diretta come root")
+        else:
+            r_np, _ = runner.run(["sudo", "-n", "true"])
+            if r_np:
+                runner.log("  Sudo     : disponibile senza password ✓")
             else:
-                # Verifica se l'utente ha sudo (con o senza password)
-                r_np, _ = runner.run(["sudo", "-n", "true"])
-                if r_np:
-                    runner.log("  Sudo     : disponibile senza password ✓")
+                groups = subprocess.run(
+                    ["id", "-nG"], capture_output=True, text=True
+                ).stdout.split()
+                if any(g in groups for g in ("sudo", "wheel")):
+                    runner.log("  Sudo     : disponibile (con password) ✓")
                 else:
-                    # -n fallisce se serve password, ma sudo potrebbe funzionare lo stesso
-                    # Controlla appartenenza al gruppo sudo/wheel
-                    groups = subprocess.run(
-                        ["id", "-nG"], capture_output=True, text=True
-                    ).stdout.split()
-                    if any(g in groups for g in ("sudo", "wheel")):
-                        runner.log("  Sudo     : disponibile (con password) ✓")
-                    else:
-                        runner.log(
-                            "  ✗ Utente non nel gruppo sudo. "
-                            "Esegui: sudo usermod -aG sudo $USER"
-                        )
-                        ok = False
-        else:
-            runner.log("  [DRY-RUN] Controllo sudo saltato")
+                    runner.log(
+                        "  ✗ Utente non nel gruppo sudo. "
+                        "Esegui: sudo usermod -aG sudo $USER"
+                    )
+                    ok = False
 
-        if not runner.dry_run:
-            r, _ = runner.run(["ping", "-c", "1", "-W", "5", "8.8.8.8"], retries=1)
-            if not r:
-                r, _ = runner.run(["ping", "-c", "1", "-W", "5", "debian.org"], retries=1)
-            runner.log("  Internet : " + ("OK ✓" if r else "✗ NON RAGGIUNGIBILE"))
-            if not r:
-                ok = False
-        else:
-            runner.log("  [DRY-RUN] Ping saltato")
+        r, _ = runner.run(["ping", "-c", "1", "-W", "5", "8.8.8.8"], retries=1)
+        if not r:
+            r, _ = runner.run(["ping", "-c", "1", "-W", "5", "debian.org"], retries=1)
+        runner.log("  Internet : " + ("OK ✓" if r else "✗ NON RAGGIUNGIBILE"))
+        if not r:
+            ok = False
 
         self._set_status(Status.DONE if ok else Status.FAILED)
         return ok
