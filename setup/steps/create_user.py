@@ -1,5 +1,6 @@
 """Passo 3 — Crea utente doorphoneserver."""
 
+import os
 import subprocess
 from lib.step_base import Step, Status
 from lib.constants import TK_USER, TK_GROUP, GOPATH, GOBIN, USER_GROUPS
@@ -36,6 +37,15 @@ class StepCreateUser(Step):
                 runner.log(f"  ⚠ Gruppo '{g}' non esiste, skip")
                 continue
             runner.run(["usermod", "-aG", g, TK_USER], sudo=True)
+
+        # Aggiunge l'utente che esegue il wizard al gruppo TK_GROUP
+        # così può leggere i file di gruppo (es. .env con chmod 640)
+        wizard_user = subprocess.run(
+            ["id", "-un"], capture_output=True, text=True
+        ).stdout.strip()
+        if wizard_user and wizard_user != TK_USER:
+            runner.run(["usermod", "-aG", TK_GROUP, wizard_user], sudo=True)
+            runner.log(f"  Aggiunto '{wizard_user}' al gruppo '{TK_GROUP}' ✓")
 
         # Home dir world-executable (755) per permettere ad altri utenti
         # (es. pi) di fare stat/exists su path sotto /home/doorphoneserver/

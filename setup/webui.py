@@ -16,6 +16,7 @@ import struct
 import subprocess
 import threading
 import logging
+from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -78,6 +79,10 @@ _state = {
     "steps":   [],               # [{"name":..,"status":..,"optional":..}]
     "failed":  [],
 }
+
+# ── Pausa per input utente (es. Credenziali .env) ─────────────────────────────
+_pause_event = threading.Event()
+_pause_data:  dict = {}
 
 
 # ── Broadcast SSE ─────────────────────────────────────────────────────────────
@@ -267,7 +272,40 @@ HTML = r"""<!DOCTYPE html>
       </div>
 
       <!-- Config section (solo per step configurabili) -->
-      {% if s.name == 'Credenziali .env' %}
+      {% if s.name == 'Controllo Sistema' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">MODELLO</span>
+            <p class="text-sm mt-0.5">{{ sysinfo.pi_model }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">OS</span>
+            <p class="text-sm mt-0.5">{{ sysinfo.codename }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">ARCH</span>
+            <p class="text-sm mt-0.5">{{ sysinfo.arch }} · Go: {{ sysinfo.go_arch }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">RAM</span>
+            <p class="text-sm mt-0.5">{{ sysinfo.ram_mb }} MB</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">DISCO LIBERO</span>
+            <p class="text-sm mt-0.5" style="color:{% if sysinfo.disk_free_gb < 3 %}var(--error){% else %}var(--success){% endif %}">
+              {{ "%.1f"|format(sysinfo.disk_free_gb) }} GB{% if sysinfo.disk_free_gb < 3 %} ✗ &lt; 3 GB richiesti{% else %} ✓{% endif %}
+            </p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">BOOT CFG</span>
+            <p class="text-xs mt-0.5" style="color:var(--muted);word-break:break-all">{{ sysinfo.boot_config }}</p>
+          </div>
+        </div>
+        <p class="text-xs mt-2" style="color:var(--muted)">Sudo e connessione internet verificati all'avvio installazione.</p>
+      </div>
+
+      {% elif s.name == 'Credenziali .env' %}
       <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
         <!-- Mumble -->
         <div class="flex flex-col gap-2 mb-3">
@@ -330,6 +368,7 @@ HTML = r"""<!DOCTYPE html>
         </div>
         <div class="flex items-center gap-3">
           <button class="btn-primary" style="font-size:.85rem;padding:.4rem 1rem" onclick="saveEnv()">💾 Salva .env ora</button>
+          <button id="resumeBtn" class="btn-primary" style="display:none;font-size:.95rem;padding:.5rem 1.4rem;background:var(--success);color:#1e1e2e" onclick="resumeInstall()">▶ Continua installazione</button>
           <span id="envSaveMsg" class="text-xs" style="color:var(--success)"></span>
         </div>
       </div>
@@ -390,6 +429,156 @@ HTML = r"""<!DOCTYPE html>
               <input type="text" id="log2ram_log_disk_size" value="256M" placeholder="es. 256M">
             </div>
           </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Pacchetti APT' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div class="text-xs font-semibold mb-2" style="color:var(--muted)">{{ apt_packages|length }} PACCHETTI DA INSTALLARE</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+          {% for pkg in apt_packages %}
+          <span style="background:#1e1e2e;border:1px solid #45475a;border-radius:.3rem;padding:.1rem .45rem;font-size:.7rem;font-family:'Courier New',monospace;color:#cdd6f4">{{ pkg }}</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% elif s.name == 'Go Language' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">VERSIONE</span>
+            <p class="text-sm mt-0.5">Go {{ go_version }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">ARCH TARGET</span>
+            <p class="text-sm mt-0.5">linux/{{ sysinfo.go_arch }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">INSTALL PATH</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/usr/local/go</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">TARBALL</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">go{{ go_version }}.linux-{{ sysinfo.go_arch }}.tar.gz</p>
+          </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Utente di Sistema' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">UTENTE</span>
+            <p class="text-sm mt-0.5 font-mono">{{ tk_user }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">HOME</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/home/{{ tk_user }}/</p>
+          </div>
+          <div style="grid-column:1/-1">
+            <span class="text-xs font-semibold" style="color:var(--muted)">GRUPPI</span>
+            <div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem">
+              {% for g in user_groups %}
+              <span style="background:#1e1e2e;border:1px solid #45475a;border-radius:.3rem;padding:.1rem .45rem;font-size:.75rem;font-family:'Courier New',monospace;color:#cdd6f4">{{ g }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Mumble Server' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">SERVIZIO</span>
+            <p class="text-sm mt-0.5">mumble-server</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">PORTA</span>
+            <p class="text-sm mt-0.5">64738 TCP/UDP</p>
+          </div>
+          <div style="grid-column:1/-1">
+            <span class="text-xs font-semibold" style="color:var(--muted)">SCRIPT</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">setup/scripts/setup_mumble.sh</p>
+          </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Config Boot RPi' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div class="text-xs font-semibold mb-2" style="color:var(--muted)">AZIONI DI setup_configs.sh</div>
+        <div style="display:flex;flex-direction:column;gap:.3rem">
+          <div class="text-xs" style="color:#cdd6f4">› Configura ALSA <span style="font-family:monospace;color:var(--muted)">(/etc/asound.conf)</span> con le schede selezionate</div>
+          <div class="text-xs" style="color:#cdd6f4">› Configura OpenAL <span style="font-family:monospace;color:var(--muted)">(/etc/openal/alsoft.conf)</span></div>
+          <div class="text-xs" style="color:#cdd6f4">› Blacklist moduli WiFi inutilizzati</div>
+          <div class="text-xs" style="color:#cdd6f4">› Aggiorna <span style="font-family:monospace;color:var(--muted)">{{ sysinfo.boot_config }}</span> (GPU mem, audio, overlay)</div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Clone & Build' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div style="grid-column:1/-1">
+            <span class="text-xs font-semibold" style="color:var(--muted)">REPOSITORY</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">github.com/MirkoUgoliniDev/DoorPhoneServer</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">GOPATH</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">{{ gopath }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">BINARIO OUTPUT</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">{{ gobin }}/doorphoneserver</p>
+          </div>
+        </div>
+        <p class="text-xs mt-2" style="color:var(--muted)">⏱ go build può richiedere 5–15 min su Pi 4.</p>
+      </div>
+
+      {% elif s.name == 'Directory & Certificati' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">PREFERENCES</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/home/{{ tk_user }}/preferences/</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">CERTIFICATO TLS</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/home/{{ tk_user }}/mumble.pem &nbsp;(RSA 4096, 3 anni)</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">CONFIG MUMBLE CLIENT</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/home/{{ tk_user }}/doorphoneserver.xml</p>
+          </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Servizio Systemd' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">SERVIZIO</span>
+            <p class="text-sm mt-0.5">doorphoneserver.service</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">UTENTE</span>
+            <p class="text-sm mt-0.5 font-mono">{{ tk_user }}</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">SUDOERS</span>
+            <p class="text-xs mt-0.5 font-mono" style="color:var(--muted)">/etc/sudoers.d/doorphoneserver-panel</p>
+          </div>
+          <div>
+            <span class="text-xs font-semibold" style="color:var(--muted)">CRONTAB</span>
+            <p class="text-xs mt-0.5" style="color:var(--muted)">Riavvii notturni + restart tablet</p>
+          </div>
+        </div>
+      </div>
+
+      {% elif s.name == 'Pulizia' %}
+      <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244">
+        <div style="display:flex;flex-direction:column;gap:.3rem">
+          <div class="text-xs" style="color:#cdd6f4">› Cache Go <span style="font-family:monospace;color:var(--muted)">(~/go/pkg)</span> rimossa se presente</div>
+          <div class="text-xs" style="color:#cdd6f4">› <span style="font-family:monospace;color:var(--muted)">apt-get clean</span> — libera cache pacchetti</div>
         </div>
       </div>
 
@@ -593,6 +782,17 @@ const ICONS = {
   PENDING: '○', RUNNING: '◎', DONE: '✓', FAILED: '✗', SKIPPED: '⊘'
 };
 
+function _resetUI(statusMsg, statusColor) {
+  currentStepIdx = -1;
+  document.getElementById('abortBtn').disabled = true;
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('startBtn').textContent = '▶  Riavvia Wizard';
+  document.getElementById('configSection').style.opacity = '1';
+  document.getElementById('configSection').style.pointerEvents = '';
+  document.getElementById('statusText').textContent = statusMsg;
+  document.getElementById('statusText').style.color = statusColor;
+}
+
 function appendCardLog(idx, msg) {
   const logDiv = document.getElementById('card-log-' + idx);
   const logBox = document.getElementById('card-logbox-' + idx);
@@ -699,31 +899,61 @@ function startInstall() {
           (done ? 'Completato: ' : 'In corso: ') + (ev.name || '');
       } else if (ev.type === 'done') {
         evtSource.close();
-        currentStepIdx = -1;
-        document.getElementById('abortBtn').disabled = true;
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('startBtn').textContent = '▶  Riavvia Wizard';
-        document.getElementById('configSection').style.opacity = '1';
-        document.getElementById('configSection').style.pointerEvents = '';
         setProgress(N_STEPS, N_STEPS);
         if (ev.failed && ev.failed.length > 0) {
-          document.getElementById('statusText').textContent =
-            'Completato con ' + ev.failed.length + ' errori';
-          document.getElementById('statusText').style.color = 'var(--warn)';
+          _resetUI('Completato con ' + ev.failed.length + ' errori', 'var(--warn)');
         } else {
-          document.getElementById('statusText').textContent = '✓ Completato!';
-          document.getElementById('statusText').style.color = 'var(--success)';
+          _resetUI('✓ Completato!', 'var(--success)');
         }
+      } else if (ev.type === 'pause') {
+        // Riabilita solo la sezione credenziali per l'inserimento
+        document.getElementById('configSection').style.opacity = '1';
+        document.getElementById('configSection').style.pointerEvents = '';
+        document.getElementById('resumeBtn').style.display = '';
+        document.getElementById('statusText').textContent = '⏸ Inserisci le credenziali e clicca Continua';
+        document.getElementById('statusText').style.color = 'var(--warn)';
+        // Scrolla alla card credenziali
+        const credCard = [...document.querySelectorAll('.font-semibold.text-sm')]
+          .find(el => el.textContent.trim() === 'Credenziali .env');
+        if (credCard) credCard.closest('.card')?.scrollIntoView({behavior:'smooth', block:'center'});
       } else if (ev.type === 'aborted') {
         evtSource.close();
         currentStepIdx = -1;
-        document.getElementById('abortBtn').disabled = true;
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('statusText').textContent = 'Interrotto';
-        document.getElementById('statusText').style.color = 'var(--warn)';
+        _resetUI('Interrotto', 'var(--warn)');
       }
     };
-    evtSource.onerror = () => evtSource.close();
+    let _sseErrCount = 0;
+    evtSource.onopen = () => { _sseErrCount = 0; };
+    evtSource.onerror = () => {
+      _sseErrCount++;
+      if (_sseErrCount > 5) {
+        evtSource.close();
+        evtSource = null;
+        _resetUI('Connessione SSE persa — ricaricare la pagina', 'var(--warn)');
+      }
+      // altrimenti EventSource riprova automaticamente
+    };
+  });
+}
+
+function resumeInstall() {
+  const btn = document.getElementById('resumeBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Invio...';
+  fetch('/resume', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(getEnvFields()),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      btn.style.display = 'none';
+      btn.disabled = false;
+      btn.textContent = '▶ Continua installazione';
+      document.getElementById('configSection').style.opacity = '0.5';
+      document.getElementById('configSection').style.pointerEvents = 'none';
+      document.getElementById('statusText').textContent = 'Installazione in corso...';
+      document.getElementById('statusText').style.color = 'var(--run)';
+    }
   });
 }
 
@@ -1230,6 +1460,9 @@ function saveEnv() {
 
 @app.route("/")
 def index():
+    from lib.constants import (
+        GO_VERSION, APT_PACKAGES, TK_USER, USER_GROUPS, GOPATH, GOBIN
+    )
     steps_data = build_steps()
     return render_template_string(
         HTML,
@@ -1243,27 +1476,40 @@ def index():
         default_hostname= DEFAULT_HOSTNAME,
         dry_run         = _dry_run,
         step_help       = _load_step_help(),
+        go_version      = GO_VERSION,
+        apt_packages    = APT_PACKAGES,
+        tk_user         = TK_USER,
+        user_groups     = USER_GROUPS,
+        gopath          = str(GOPATH),
+        gobin           = str(GOBIN),
     )
 
 
 @app.route("/save_env", methods=["POST"])
 def save_env():
-    from lib.constants import REPO_ROOT
+    from lib.constants import TK_USER, TK_GROUP
     data = request.get_json(force=True)
-    lines = [
-        "# Generato dal setup wizard DoorPhoneServer\n",
-        f"MUMBLE_USERNAME={data.get('env_mumble_username','')}\n",
-        f"MUMBLE_PASSWORD={data.get('env_mumble_password','')}\n",
-        f"CAMERA_USERNAME={data.get('env_camera_username','')}\n",
-        f"CAMERA_PASSWORD={data.get('env_camera_password','')}\n",
-        f"PUSHOVER_API_TOKEN={data.get('env_pushover_token','')}\n",
-        f"PUSHOVER_USER_KEY={data.get('env_pushover_key','')}\n",
-        f"OPENROUTER_API_KEY={data.get('env_openrouter_key','')}\n",
-    ]
+    content = (
+        "# Generato dal setup wizard DoorPhoneServer\n"
+        f"MUMBLE_USERNAME={data.get('env_mumble_username','')}\n"
+        f"MUMBLE_PASSWORD={data.get('env_mumble_password','')}\n"
+        f"CAMERA_USERNAME={data.get('env_camera_username','')}\n"
+        f"CAMERA_PASSWORD={data.get('env_camera_password','')}\n"
+        f"PUSHOVER_API_TOKEN={data.get('env_pushover_token','')}\n"
+        f"PUSHOVER_USER_KEY={data.get('env_pushover_key','')}\n"
+        f"OPENROUTER_API_KEY={data.get('env_openrouter_key','')}\n"
+    )
+    env_path = Path(f"/home/{TK_USER}/.env")
     try:
-        env_path = REPO_ROOT / ".env"
-        env_path.write_text("".join(lines))
-        env_path.chmod(0o600)
+        # Usa sudo tee per scrivere il file (di proprietà di TK_USER)
+        r = subprocess.run(
+            ["sudo", "tee", str(env_path)],
+            input=content, capture_output=True, text=True
+        )
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": r.stderr.strip() or "sudo tee fallito"})
+        subprocess.run(["sudo", "chmod", "640", str(env_path)])
+        subprocess.run(["sudo", "chown", f"{TK_USER}:{TK_GROUP}", str(env_path)])
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -1325,19 +1571,39 @@ def start():
         step.set_callback(on_step_status)
 
     def run_thread():
+        import traceback
         failed = []
         try:
             for i, step in enumerate(steps):
                 if _abort_event.is_set():
                     _broadcast({"type": "aborted"})
                     break
+
+                # Pausa per inserimento credenziali prima di scrivere .env
+                if step.name == "Credenziali .env" and not runner.dry_run:
+                    _pause_event.clear()
+                    _broadcast({"type": "pause", "idx": i, "name": step.name})
+                    _log_cb("  ⏸ In attesa delle credenziali dall'utente...")
+                    while not _pause_event.wait(timeout=1.0):
+                        if _abort_event.is_set():
+                            break
+                    if _abort_event.is_set():
+                        _broadcast({"type": "aborted"})
+                        break
+                    config.update(_pause_data)
+                    _log_cb("  ▶ Credenziali ricevute, continuo...")
+
                 _log_cb(f"\n► Passo {i+1}/{len(steps)}: {step.name}")
-                ok = step.execute(runner, _sysinfo, config)
+                try:
+                    ok = step.execute(runner, _sysinfo, config)
+                except Exception as exc:
+                    _log_cb(f"\n✗ ECCEZIONE in '{step.name}': {exc}")
+                    logging.error(traceback.format_exc())
+                    ok = False
                 if not ok:
                     failed.append(step.name)
         except Exception as exc:
-            import traceback
-            _log_cb(f"\n✗ ERRORE INATTESO: {exc}")
+            _log_cb(f"\n✗ ERRORE INATTESO nel runner: {exc}")
             logging.error(traceback.format_exc())
         finally:
             _state["running"] = False
@@ -1351,6 +1617,15 @@ def start():
 @app.route("/abort", methods=["POST"])
 def abort():
     _abort_event.set()
+    _pause_event.set()  # sblocca anche eventuale pausa
+    return jsonify({"ok": True})
+
+
+@app.route("/resume", methods=["POST"])
+def resume():
+    global _pause_data
+    _pause_data = request.get_json(force=True) or {}
+    _pause_event.set()
     return jsonify({"ok": True})
 
 
@@ -1362,11 +1637,11 @@ def stream():
     def generate():
         try:
             while True:
-                event = q.get(timeout=30)
-                yield f"data: {json.dumps(event)}\n\n"
-        except queue.Empty:
-            # keepalive
-            yield ": keepalive\n\n"
+                try:
+                    event = q.get(timeout=25)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
         except GeneratorExit:
             pass
         finally:

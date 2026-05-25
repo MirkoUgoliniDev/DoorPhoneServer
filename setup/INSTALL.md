@@ -58,19 +58,14 @@ Riconnettiti dopo il riavvio.
 
 ---
 
-## Passo 3 — Installa git e python3
+## Passo 3 — Installa git, pip e Flask
 
-Su Raspberry Pi OS sono quasi sempre già presenti. Verifica:
-
-```bash
-git --version
-python3 --version
-```
-
-Se mancano:
+Questi pacchetti sono necessari per clonare il repository e avviare il wizard:
 
 ```bash
-sudo apt-get install -y git python3
+sudo apt install git -y
+sudo apt install python3-pip -y
+sudo apt install python3-flask -y
 ```
 
 ---

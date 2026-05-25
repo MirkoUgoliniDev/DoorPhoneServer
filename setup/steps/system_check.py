@@ -32,23 +32,34 @@ class StepSystemCheck(Step):
             ok = False
 
         if os.geteuid() == 0:
-            runner.log("  Sudo     : esecuzione diretta come root")
+            runner.log("  Sudo     : esecuzione diretta come root ✓")
         else:
             r_np, _ = runner.run(["sudo", "-n", "true"])
             if r_np:
-                runner.log("  Sudo     : disponibile senza password ✓")
+                runner.log("  Sudo     : passwordless ✓")
             else:
+                # Il wizard gira senza TTY: sudo con password non funziona mai.
                 groups = subprocess.run(
                     ["id", "-nG"], capture_output=True, text=True
                 ).stdout.split()
+                user = subprocess.run(
+                    ["whoami"], capture_output=True, text=True
+                ).stdout.strip()
                 if any(g in groups for g in ("sudo", "wheel")):
-                    runner.log("  Sudo     : disponibile (con password) ✓")
+                    runner.log(
+                        f"  ✗ Sudo richiede password — il wizard non può procedere.\n"
+                        f"    Esegui da terminale, poi rilancia il wizard:\n"
+                        f"    echo '{user} ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/{user}-nopasswd\n"
+                        f"    sudo chmod 440 /etc/sudoers.d/{user}-nopasswd"
+                    )
                 else:
                     runner.log(
-                        "  ✗ Utente non nel gruppo sudo. "
-                        "Esegui: sudo usermod -aG sudo $USER"
+                        f"  ✗ Utente '{user}' non nel gruppo sudo.\n"
+                        f"    Esegui da terminale come root:\n"
+                        f"    usermod -aG sudo {user} && "
+                        f"echo '{user} ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/{user}-nopasswd"
                     )
-                    ok = False
+                ok = False
 
         r, _ = runner.run(["ping", "-c", "1", "-W", "5", "8.8.8.8"], retries=1)
         if not r:

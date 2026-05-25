@@ -1,4 +1,4 @@
-<div align="center">
+ <div align="center">
   <img src="logo.svg" alt="DoorPhoneServer Logo" width="160"/>
 </div>
 
@@ -207,30 +207,17 @@ Attendi 30–60 secondi e riconnettiti via SSH:
 ssh pi@doorphoneserver.local
 ```
 
-### C2. Verifica che git e python3 siano presenti
+### C2. Installa git, pip e Flask
 
-Su Raspberry Pi OS sono quasi sempre già installati. Verificalo:
+Questi pacchetti sono necessari per clonare il repository e avviare il wizard:
+
 ```bash
-git --version
-python3 --version
+sudo apt install git -y
+sudo apt install python3-pip -y
+sudo apt install python3-flask -y
 ```
 
-Output atteso:
-```
-git version 2.39.x
-Python 3.11.x
-```
-
-### C3. Installa le dipendenze del wizard
-
-Il Setup Wizard usa Flask per l'interfaccia web. Installalo:
-```bash
-sudo apt-get install -y git python3-flask
-```
-
-> `git` potrebbe già essere installato — `apt-get` lo salta senza errori se è già presente.
-
-### C4. Collega la scheda audio USB
+### C3. Collega la scheda audio USB
 
 **Prima di procedere**, collega la scheda audio USB al Pi.
 
@@ -250,7 +237,7 @@ Deve comparire una voce con "USB Audio" o il nome della tua scheda. Se non compa
 - Verifica che la scheda sia alimentata (alcune richiedono USB 3.0)
 - Riavvia il Pi con la scheda già collegata
 
-### C5. Clona il repository
+### C4. Clona il repository
 
 Clona il repository di DoorPhoneServer nella cartella home dell'utente `pi`:
 

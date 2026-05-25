@@ -7,7 +7,7 @@
 			<serverandport>127.0.0.1:64738</serverandport>
 			<insecure>true</insecure>
 			<register>false</register>
-			<certificate/>
+			<certificate>/home/doorphoneserver/mumble.pem</certificate>
 			<channel/>
 			<ident>DoorPi</ident>
 		</account>
@@ -20,9 +20,9 @@
 
 			<settings>
 				<singleinstance>true</singleinstance>
-				<outputdevice>Headphone</outputdevice>
-				<outputvolcontroldevice>Headphone</outputvolcontroldevice>
-				<outputmutecontroldevice>Headphone</outputmutecontroldevice>
+				<outputdevice>Speaker</outputdevice>
+				<outputvolcontroldevice>Speaker</outputvolcontroldevice>
+				<outputmutecontroldevice>Speaker</outputmutecontroldevice>
 				<logfilenameandpath>/home/doorphoneserver/doorphoneserver.log</logfilenameandpath>
 				<logging>fileonly</logging>
 				<loglevel>info</loglevel>
