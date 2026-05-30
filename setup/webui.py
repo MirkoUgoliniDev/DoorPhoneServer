@@ -84,6 +84,11 @@ _state = {
 _pause_event = threading.Event()
 _pause_data:  dict = {}
 
+# ── Rollback ──────────────────────────────────────────────────────────────────
+_rollback_proc: subprocess.Popen = None
+_rollback_subs: list = []
+_rollback_lock = threading.Lock()
+
 
 # ── Broadcast SSE ─────────────────────────────────────────────────────────────
 
@@ -139,6 +144,11 @@ HTML = r"""<!DOCTYPE html>
   .card-done    { border-color:var(--success) !important; }
   .card-failed  { border-color:var(--error) !important; }
   .progress-bar { transition:width .4s ease; }
+  @keyframes badge-pulse {
+    0%,100% { opacity:1; box-shadow:0 0 0 0 var(--run); }
+    50%      { opacity:.75; box-shadow:0 0 0 4px transparent; }
+  }
+  .badge-running { animation:badge-pulse 1.2s ease-in-out infinite; }
   input[type=text],input[type=number],input[type=password],input[type=email],select {
     background:#1e1e2e !important; border:1px solid #45475a; border-radius:.4rem;
     color:#cdd6f4 !important; padding:.35rem .6rem; width:100%; box-sizing:border-box;
@@ -170,6 +180,20 @@ HTML = r"""<!DOCTYPE html>
                    box-shadow:0 1px 3px rgba(0,0,0,.4); }
   input:checked + .slider { background:var(--success); }
   input:checked + .slider:before { transform:translateY(-50%) translateX(20px); }
+  /* Custom modal */
+  .modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center; z-index:9999;
+    opacity:0; transition:opacity .2s; pointer-events:none;
+  }
+  .modal-overlay.open { opacity:1; pointer-events:all; }
+  .modal-box {
+    background:#313244; border:1px solid #45475a; border-radius:1rem;
+    padding:2rem 2rem 1.5rem; max-width:420px; width:90%;
+    box-shadow:0 20px 60px rgba(0,0,0,.6);
+    transform:scale(.95); transition:transform .2s;
+  }
+  .modal-overlay.open .modal-box { transform:scale(1); }
 </style>
 </head>
 <body class="flex">
@@ -230,14 +254,37 @@ HTML = r"""<!DOCTYPE html>
   </div>
 
   <!-- Buttons + status -->
-  <div class="flex items-center gap-3 flex-wrap">
+  <div id="btnBar" class="flex items-center gap-3 flex-wrap">
     <button id="startBtn" class="btn-primary" onclick="startInstall()">▶&nbsp; Avvia Installazione</button>
     <button id="abortBtn" class="btn-danger" disabled onclick="abortInstall()">■&nbsp; Interrompi</button>
+    {% if rollback_available %}
+    <button id="rollbackBtn" class="btn-danger" onclick="startRollback()"
+      style="background:transparent;border:1.5px solid var(--error);color:var(--error)"
+      title="Rimuove tutto ciò che il wizard ha installato">⎌&nbsp; Rollback</button>
+    {% endif %}
     <span id="statusText" class="text-sm ml-4" style="color:var(--muted)"></span>
   </div>
 
+  <!-- Rollback panel (hidden until rollback starts) -->
+  <div id="rollbackPanel" style="display:none" class="card p-5 flex flex-col gap-3">
+    <div class="flex items-center justify-between">
+      <span id="rollbackTitle" class="font-semibold" style="color:var(--error);font-size:1rem">⎌ Rollback in corso…</span>
+      <button id="rollbackAbortBtn" onclick="abortRollback()"
+        style="font-size:.75rem;padding:.3rem .9rem;border-radius:.4rem;border:1px solid var(--error);background:transparent;color:var(--error);cursor:pointer">
+        ■ Interrompi
+      </button>
+    </div>
+    <div class="log-box" id="rollbackLogBox" style="height:420px;font-size:.75rem"></div>
+    <div class="flex items-center justify-between">
+      <div id="rollbackStatus" class="text-sm" style="color:var(--muted)"></div>
+      <button id="rollbackDoneBtn" style="display:none" class="btn-primary" onclick="location.reload()">
+        ▶ Ricomincia installazione
+      </button>
+    </div>
+  </div>
+
   <!-- Progress bar -->
-  <div class="card p-4">
+  <div id="progressBarCard" class="card p-4">
     <div class="flex justify-between text-xs mb-2" style="color:var(--muted)">
       <span id="progressLabel">In attesa</span>
       <span id="progressPct">0%</span>
@@ -875,6 +922,7 @@ function startInstall() {
             cardBadge.style.background = bc.bg;
             cardBadge.style.color = bc.color;
             cardBadge.style.display = '';
+            cardBadge.classList.toggle('badge-running', ev.status === 'RUNNING');
           }
         }
         // Update card border class
@@ -961,6 +1009,107 @@ function abortInstall() {
   fetch('/abort', {method:'POST'});
   document.getElementById('abortBtn').disabled = true;
   document.getElementById('statusText').textContent = 'Interruzione in corso...';
+}
+
+let _rollbackSrc = null;
+
+const _ROLLBACK_HIDE = ['dryRunBar', 'btnBar', 'progressBarCard', 'configSection'];
+
+function _rollbackHideAll() {
+  _ROLLBACK_HIDE.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function startRollback() {
+  const modal = document.getElementById('rollbackModal');
+  modal.classList.add('open');
+}
+
+function closeRollbackModal() {
+  document.getElementById('rollbackModal').classList.remove('open');
+}
+
+function _doRollback() {
+  _rollbackHideAll();
+
+  const panel   = document.getElementById('rollbackPanel');
+  const logBox  = document.getElementById('rollbackLogBox');
+  const status  = document.getElementById('rollbackStatus');
+  const title   = document.getElementById('rollbackTitle');
+  const doneBtn = document.getElementById('rollbackDoneBtn');
+  const abortBtn = document.getElementById('rollbackAbortBtn');
+
+  logBox.innerHTML = '';
+  status.textContent = '';
+  title.textContent = '⎌ Rollback in corso…';
+  title.style.color = 'var(--error)';
+  doneBtn.style.display = 'none';
+  abortBtn.disabled = false;
+  panel.style.display = '';
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+
+  fetch('/rollback', {method:'POST'}).then(r => r.json()).then(data => {
+    if (!data.ok) {
+      title.textContent = '✗ Errore avvio rollback';
+      status.textContent = data.error || 'Errore sconosciuto';
+      status.style.color = 'var(--error)';
+      doneBtn.style.display = '';
+      abortBtn.style.display = 'none';
+      return;
+    }
+
+    _rollbackSrc = new EventSource('/rollback_stream');
+    _rollbackSrc.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      const line = ev.line || '';
+
+      if (line.startsWith('__DONE__:')) {
+        _rollbackSrc.close();
+        _rollbackSrc = null;
+        abortBtn.style.display = 'none';
+        const rc = parseInt(line.split(':')[1], 10);
+        if (rc === 0) {
+          title.textContent = '✓ Rollback completato';
+          title.style.color = 'var(--success)';
+          status.textContent = 'Il sistema è stato ripristinato. Clicca il pulsante per ricominciare l\'installazione.';
+        } else {
+          title.textContent = '⚠ Rollback terminato con errori';
+          title.style.color = 'var(--warn)';
+          status.textContent = 'Exit code: ' + rc + '. Controlla il log sopra.';
+        }
+        status.style.color = rc === 0 ? 'var(--success)' : 'var(--warn)';
+        doneBtn.style.display = '';
+        doneBtn.scrollIntoView({behavior:'smooth', block:'nearest'});
+        return;
+      }
+
+      const span = document.createElement('span');
+      const stripped = line.replace(/\x1b\[[0-9;]*m/g, '');
+      if (/ERRORE|FAIL|✗/.test(stripped))   span.className = 'log-err';
+      else if (stripped.startsWith('▶'))    span.className = 'log-step';
+      else if (/✓/.test(stripped))          span.style.color = 'var(--success)';
+      else if (/—.*\(skip\)/.test(stripped)) span.className = 'log-muted';
+      span.textContent = stripped + '\n';
+      logBox.appendChild(span);
+      logBox.scrollTop = logBox.scrollHeight;
+    };
+    _rollbackSrc.onerror = () => {
+      if (_rollbackSrc) { _rollbackSrc.close(); _rollbackSrc = null; }
+      title.textContent = '⚠ Connessione SSE persa';
+      title.style.color = 'var(--warn)';
+      status.textContent = 'Ricaricare la pagina per verificare lo stato.';
+      status.style.color = 'var(--warn)';
+      abortBtn.style.display = 'none';
+      doneBtn.style.display = '';
+    };
+  });
+}
+
+function abortRollback() {
+  fetch('/rollback_abort', {method:'POST'});
+  document.getElementById('rollbackAbortBtn').disabled = true;
 }
 
 function stepLabelClick(name, labelEl) {
@@ -1451,12 +1600,68 @@ function saveEnv() {
   }).catch(()=>{ msg.textContent = '✗ Errore di rete'; msg.style.color='var(--error)'; });
 }
 </script>
+
+<!-- Rollback confirm modal -->
+<div id="rollbackModal" class="modal-overlay" onclick="if(event.target===this)closeRollbackModal()">
+  <div class="modal-box flex flex-col gap-4">
+    <div class="flex items-start gap-3">
+      <span style="font-size:1.6rem;line-height:1">⚠</span>
+      <div>
+        <p class="font-bold text-base mb-1" style="color:var(--error)">Conferma Rollback</p>
+        <p class="text-sm leading-6" style="color:#cdd6f4">
+          Verranno rimossi dal sistema:
+        </p>
+        <ul class="text-sm mt-2 space-y-1" style="color:var(--muted);padding-left:1.2rem;list-style:disc">
+          <li>Servizio systemd <span style="color:#cdd6f4">doorphoneserver</span></li>
+          <li>Mumble server</li>
+          <li>Log2Ram</li>
+          <li>Go language <code style="color:var(--accent)">/usr/local/go</code></li>
+          <li>Utente di sistema <code style="color:var(--accent)">doorphoneserver</code></li>
+          <li>File generati <code style="color:var(--accent)">.env, certificati, bin/</code></li>
+          <li>Pacchetti APT installati dal wizard</li>
+        </ul>
+        <p class="text-sm mt-3" style="color:var(--success)">
+          ✓ Il repository git verrà mantenuto.
+        </p>
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-2">
+      <button onclick="closeRollbackModal()"
+        style="padding:.5rem 1.2rem;border-radius:.5rem;border:1px solid #45475a;background:transparent;color:#cdd6f4;cursor:pointer;font-size:.9rem">
+        Annulla
+      </button>
+      <button onclick="closeRollbackModal(); _doRollback()"
+        style="padding:.5rem 1.4rem;border-radius:.5rem;border:none;background:var(--error);color:#1e1e2e;font-weight:700;cursor:pointer;font-size:.9rem">
+        ⎌ Procedi con il rollback
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
 """
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+def _check_rollback_available() -> bool:
+    """Ritorna True se almeno un artefatto dell'installazione è presente sul sistema."""
+    import pwd, grp
+    checks = [
+        os.path.isfile("/etc/systemd/system/doorphoneserver.service"),
+        os.path.isdir("/usr/local/go"),
+        os.path.isfile("/home/doorphoneserver/.env"),
+        os.path.isfile("/home/doorphoneserver/cert.pem"),
+    ]
+    # controlla anche se l'utente di sistema esiste
+    try:
+        pwd.getpwnam("doorphoneserver")
+        checks.append(True)
+    except KeyError:
+        pass
+    return any(checks)
+
 
 @app.route("/")
 def index():
@@ -1466,22 +1671,23 @@ def index():
     steps_data = build_steps()
     return render_template_string(
         HTML,
-        version         = WIZARD_VERSION,
-        steps           = [
+        version             = WIZARD_VERSION,
+        steps               = [
             {"name": s.name, "icon": STEP_ICONS[s.status], "optional": s.optional, "description": s.description}
             for s in steps_data
         ],
-        n_steps         = len(steps_data),
-        sysinfo         = _sysinfo,
-        default_hostname= DEFAULT_HOSTNAME,
-        dry_run         = _dry_run,
-        step_help       = _load_step_help(),
-        go_version      = GO_VERSION,
-        apt_packages    = APT_PACKAGES,
-        tk_user         = TK_USER,
-        user_groups     = USER_GROUPS,
-        gopath          = str(GOPATH),
-        gobin           = str(GOBIN),
+        n_steps             = len(steps_data),
+        sysinfo             = _sysinfo,
+        default_hostname    = DEFAULT_HOSTNAME,
+        dry_run             = _dry_run,
+        step_help           = _load_step_help(),
+        go_version          = GO_VERSION,
+        apt_packages        = APT_PACKAGES,
+        tk_user             = TK_USER,
+        user_groups         = USER_GROUPS,
+        gopath              = str(GOPATH),
+        gobin               = str(GOBIN),
+        rollback_available  = _check_rollback_available(),
     )
 
 
@@ -1655,6 +1861,87 @@ def stream():
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         }
+    )
+
+
+# ── Rollback endpoints ────────────────────────────────────────────────────────
+
+def _rollback_broadcast(line: str):
+    with _rollback_lock:
+        dead = []
+        for q in _rollback_subs:
+            try:
+                q.put_nowait(line)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            _rollback_subs.remove(q)
+
+
+@app.route("/rollback", methods=["POST"])
+def rollback_start():
+    global _rollback_proc
+    with _rollback_lock:
+        if _rollback_proc and _rollback_proc.poll() is None:
+            return jsonify({"ok": False, "error": "Rollback già in corso"})
+        script = os.path.join(os.path.dirname(_HERE), "rollback.sh")
+        if not os.path.isfile(script):
+            return jsonify({"ok": False, "error": f"rollback.sh non trovato: {script}"})
+        _rollback_proc = subprocess.Popen(
+            ["bash", script, "--yes"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+    def _reader():
+        for line in _rollback_proc.stdout:
+            _rollback_broadcast(line.rstrip("\n"))
+        _rollback_proc.wait()
+        rc = _rollback_proc.returncode
+        _rollback_broadcast(f"__DONE__:{rc}")
+
+    threading.Thread(target=_reader, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/rollback_abort", methods=["POST"])
+def rollback_abort():
+    global _rollback_proc
+    with _rollback_lock:
+        if _rollback_proc and _rollback_proc.poll() is None:
+            _rollback_proc.terminate()
+    return jsonify({"ok": True})
+
+
+@app.route("/rollback_stream")
+def rollback_stream():
+    q = queue.Queue(maxsize=500)
+    with _rollback_lock:
+        _rollback_subs.append(q)
+
+    def generate():
+        try:
+            while True:
+                try:
+                    line = q.get(timeout=30)
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                    if line.startswith("__DONE__:"):
+                        break
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _rollback_lock:
+                if q in _rollback_subs:
+                    _rollback_subs.remove(q)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

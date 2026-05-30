@@ -145,6 +145,31 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/panel/api/esp32/status", b.handleESP32Status)
 	mux.HandleFunc("/panel/api/esp32/fan", b.handleESP32Fan)
 	mux.HandleFunc("/panel/api/esp32/door", b.handleESP32Door)
+	mux.HandleFunc("/panel/api/esp32/cardlog/clear", b.handleESP32CardLogClear)
+	mux.HandleFunc("/panel/api/esp32/usblog", b.handleESP32USBLog)
+	// NFC Whitelist — gestione via protocol coordinato con ESP32
+	mux.HandleFunc("/whitelist", b.handleWhitelistPage)
+	mux.HandleFunc("/api/whitelist", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			b.handleWhitelistGet(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/whitelist/enroll", b.handleWhitelistEnrollStart)
+	mux.HandleFunc("/api/whitelist/enroll/events", b.handleWhitelistEnrollEvents)
+	mux.HandleFunc("/api/whitelist/enroll/cancel", b.handleWhitelistEnrollCancel)
+	mux.HandleFunc("/api/whitelist/sync", b.handleWhitelistSync)
+	mux.HandleFunc("/api/whitelist/clearall", b.handleWhitelistClearAll)
+	mux.HandleFunc("/api/whitelist/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			b.handleWhitelistUpdate(w, r)
+		} else if r.Method == http.MethodDelete {
+			b.handleWhitelistDelete(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
 	apkPath := filepath.Join(filepath.Dir(ConfigXMLFile), "apk")
 	mux.Handle("/apk/", http.StripPrefix("/apk/", http.FileServer(http.Dir(apkPath))))
@@ -3942,6 +3967,40 @@ func (b *DoorPhoneServer) handleESP32Fan(w http.ResponseWriter, r *http.Request)
 	}
 	b.USBBridge.Send("PWM fan " + strconv.Itoa(duty) + "\n")
 	log.Printf("[PANEL] ESP32 fan duty=%d%%", duty)
+	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+// handleESP32USBLog restituisce le ultime righe del log seriale USB (← ricevute, → inviate).
+// GET → JSON array di stringhe. POST → svuota il buffer.
+func (b *DoorPhoneServer) handleESP32USBLog(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		USBLogClear()
+		fmt.Fprintf(w, `{"ok":true}`)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	lines := USBLogSnapshot()
+	if err := json.NewEncoder(w).Encode(lines); err != nil {
+		log.Printf("error: encode usblog: %v", err)
+	}
+}
+
+// handleESP32CardLogClear svuota il log tessere in memoria.
+func (b *DoorPhoneServer) handleESP32CardLogClear(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if b.USBBridge != nil {
+		b.USBBridge.State.clearCards()
+	}
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 

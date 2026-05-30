@@ -12,9 +12,9 @@ User=doorphoneserver
 Group=doorphoneserver
 Type=simple
 WorkingDirectory=/home/doorphoneserver
+ExecStartPre=-/bin/rm -f /home/doorphoneserver/doorphoneserver.lock
 ExecStartPre=/bin/sleep 15
 ExecStart=/home/doorphoneserver/bin/doorphoneserver -config=/home/doorphoneserver/doorphoneserver.xml
-ExecStop=/bin/kill -s SIGTERM $MAINPID
 Restart=always
 RestartSec=10
 

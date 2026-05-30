@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NFC Whitelist — DoorPhoneServer</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/panel.css">
+<link rel="stylesheet" href="/static/bootstrap-icons.min.css">
+<style>
+.wl-table{width:100%;border-collapse:collapse;font-size:14px}
+.wl-table th{text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap}
+.wl-table td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.wl-table tr:last-child td{border-bottom:none}
+.wl-table tr:hover td{background:rgba(255,255,255,.03)}
+.tag-id{font-family:'Fira Code',monospace;font-size:13px;color:var(--accent);letter-spacing:.05em}
+.badge-type{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.badge-plain{background:rgba(94,234,212,.15);color:#5eecd4;border:1px solid rgba(94,234,212,.3)}
+.badge-desfire{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.action-btns{display:flex;gap:6px;flex-wrap:wrap}
+.btn-xs{padding:4px 10px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;transition:.15s;white-space:nowrap}
+.btn-xs:hover{color:var(--text);border-color:var(--text)}
+.btn-xs.danger:hover{color:#ef4444;border-color:#ef4444}
+.empty-state{text-align:center;padding:48px 24px;color:var(--dim)}
+.empty-state i{font-size:48px;opacity:.3;display:block;margin-bottom:12px}
+.modal-radios{display:flex;flex-direction:column;gap:12px;margin:16px 0}
+.radio-item{display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px;transition:.15s}
+.radio-item:hover{background:rgba(255,255,255,.03)}
+.radio-item input[type="radio"]{cursor:pointer}
+.countdown-ring{position:relative;width:80px;height:80px;margin:0 auto 16px}
+.countdown-ring svg{transform:rotate(-90deg)}
+.countdown-ring circle{fill:none;stroke-width:6}
+.countdown-ring .bg{stroke:var(--border)}
+.countdown-ring .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .9s linear}
+.countdown-num{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:22px;font-weight:700;color:var(--accent)}
+.tag-info-box{background:#0a0f1a;border:1px solid var(--accent);border-radius:8px;padding:14px 18px;margin-bottom:12px;text-align:center}
+.tag-info-label{font-size:11px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em}
+.tag-info-id{font-family:'Fira Code',monospace;font-size:18px;color:var(--accent);font-weight:700}
+input.name-input{background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box}
+input.name-input:focus{outline:none;border-color:var(--accent)}
+.spinner{width:20px;height:20px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:20px;right:20px;padding:14px 18px;border-radius:6px;background:#0f3a1a;color:#22c55e;border:1px solid #22c55e;font-size:13px;z-index:9999;max-width:300px;display:none}
+.toast.err{background:#3a0f0f;color:#ef4444;border-color:#ef4444}
+</style>
+</head>
+<body>
+
+<!-- Modal: Aggiungi Tag -->
+<div class="modal-overlay" id="addModal">
+<div class="modal-box" style="width:420px;max-width:95vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-wifi"></i></div>
+    <div class="modal-title" id="addModalTitle">Aggiungi Tag NFC</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:16px" id="addModalBody">
+
+    <!-- Step 1: scelta modalità -->
+    <div id="stepMode">
+      <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:8px">Tipo di tag:</label>
+      <div class="modal-radios">
+        <label class="radio-item">
+          <input type="radio" name="mode" value="plain">
+          <div>
+            <div style="font-weight:700">Tag Normale</div>
+            <div style="font-size:12px;color:var(--dim)">MIFARE Classic, NTAG</div>
+          </div>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="desfire-existing">
+          <div>
+            <div style="font-weight:700">DESFire (già configurato)</div>
+            <div style="font-size:12px;color:var(--dim)">Ha già la nostra chiave</div>
+          </div>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="desfire-new" checked>
+          <div>
+            <div style="font-weight:700">DESFire (nuovo)</div>
+            <div style="font-size:12px;color:var(--dim)">Va inizializzato</div>
+          </div>
+        </label>
+      </div>
+      <label style="font-size:13px;color:var(--dim);display:block;margin-top:12px">Nominativo:</label>
+      <input type="text" class="name-input" id="tagNameStep1" placeholder="Es. Mario Rossi" maxlength="64" autocomplete="off">
+    </div>
+
+    <!-- Step 2: ascolto -->
+    <div id="stepWaiting" style="display:none">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div class="countdown-ring">
+          <svg width="80" height="80">
+            <circle class="bg" cx="40" cy="40" r="34" />
+            <circle class="fg" id="cdCircle" cx="40" cy="40" r="34" stroke-dasharray="213.6" stroke-dashoffset="0" />
+          </svg>
+          <div class="countdown-num" id="cdNum">30</div>
+        </div>
+        <div id="waitingMsg" style="text-align:center;font-size:14px;color:var(--dim)">Avvicina il tag al lettore…</div>
+      </div>
+    </div>
+
+    <!-- Step 3: tag formato (fase 1 DESFire) -->
+    <div id="stepTag" style="display:none">
+      <div class="tag-info-box">
+        <div class="tag-info-label">Tag inizializzato</div>
+        <div class="tag-info-id" id="detectedTagId">—</div>
+      </div>
+      <div id="formatOKMsg" style="text-align:center;font-size:13px;color:var(--dim);margin-top:8px"></div>
+    </div>
+
+    <!-- Step 4: timeout -->
+    <div id="stepTimeout" style="display:none;text-align:center">
+      <i class="bi bi-clock-history" style="font-size:36px;opacity:.4;display:block;margin-bottom:10px"></i>
+      <div style="color:var(--dim)">Timeout: nessun tag rilevato</div>
+    </div>
+
+    <!-- Step 5: errore -->
+    <div id="stepError" style="display:none">
+      <i class="bi bi-exclamation-triangle" style="font-size:36px;color:#ef4444;display:block;margin-bottom:10px;opacity:.7"></i>
+      <div id="errorMsg" style="color:var(--dim);text-align:center"></div>
+    </div>
+
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="closeAddModal()">Annulla</button>
+    <button class="modal-btn primary" id="addConfirmBtn" style="display:none" onclick="confirmAdd()">Avvia</button>
+    <button class="modal-btn primary" id="addRetryBtn" style="display:none" onclick="retryAdd()">Riprova</button>
+  </div>
+</div>
+</div>
+
+<!-- Modal: Modifica Nominativo -->
+<div class="modal-overlay" id="editModal">
+<div class="modal-box" style="width:380px;max-width:95vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-pencil"></i></div>
+    <div class="modal-title">Modifica Nominativo</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+    <div style="font-size:12px;color:var(--dim)">Tag: <span class="tag-id" id="editTagId">—</span></div>
+    <input type="text" class="name-input" id="editNameInput" placeholder="Nominativo" maxlength="64">
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="closeEditModal()">Annulla</button>
+    <button class="modal-btn primary" onclick="confirmEdit()">Salva</button>
+  </div>
+</div>
+</div>
+
+<!-- Modal: Conferma Rimozione -->
+<div class="modal-overlay" id="deleteModal">
+<div class="modal-box" style="width:360px;max-width:95vw">
+  <div class="modal-header">
+    <div class="modal-icon warn">⚠</div>
+    <div class="modal-title">Rimuovi Tag</div>
+  </div>
+  <div class="modal-body">
+    Rimuovere il tag <span class="tag-id" id="deleteTagId">—</span> (<span id="deleteTagName">—</span>) dalla whitelist?
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="closeDeleteModal()">Annulla</button>
+    <button class="modal-btn danger" onclick="confirmDelete()">Rimuovi</button>
+  </div>
+</div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Header -->
+<div class="header">
+  <a href="/panel" style="color:var(--dim);font-size:20px;text-decoration:none;line-height:1"><i class="bi bi-arrow-left-circle"></i></a>
+  <div>
+    <h1 style="display:flex;align-items:center;gap:10px">
+      <i class="bi bi-wifi" style="color:var(--accent)"></i>
+      NFC Whitelist
+    </h1>
+    <div class="ver">Gestione accessi tramite tag NFC</div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="page active" style="max-width:900px">
+
+  <div class="card">
+    <div class="bar" style="margin-bottom:20px">
+      <button class="btn btn-primary" onclick="startAdd()" id="addBtn">
+        <i class="bi bi-plus-circle"></i> Aggiungi Tag
+      </button>
+      <span style="margin-left:auto;font-size:13px;color:var(--dim)" id="countLabel"></span>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table class="wl-table" id="wlTable">
+        <thead>
+          <tr>
+            <th>UID</th>
+            <th>Nominativo</th>
+            <th>Tipo</th>
+            <th>Aggiunto il</th>
+            <th>Ultimo accesso</th>
+            <th>Accessi</th>
+            <th>Azioni</th>
+          </tr>
+        </thead>
+        <tbody id="wlBody">
+          <tr><td colspan="7" class="empty-state">
+            <div class="spinner" style="margin:0 auto 12px"></div>
+            <div>Caricamento…</div>
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let wlData = [];
+let cdTimer = null;
+let enrollEventSource = null;
+let cdSeconds = 30;
+let circleLen = 213.6;
+let editTarget = '';
+let deleteTarget = '';
+
+function toast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (ok ? '' : 'err');
+  t.style.display = 'block';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('it-IT', {day:'2-digit',month:'2-digit',year:'2-digit'}) + 
+         ' ' + d.toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'});
+}
+
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function hideModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function loadList() {
+  try {
+    const r = await fetch('/api/whitelist');
+    if (!r.ok) throw new Error(r.statusText);
+    wlData = await r.json() || [];
+    renderList();
+  } catch(e) {
+    document.getElementById('wlBody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:32px;color:#ef4444">Errore: ${e.message}</td></tr>`;
+  }
+}
+
+function renderList() {
+  const body = document.getElementById('wlBody');
+  document.getElementById('countLabel').textContent = wlData.length ? `${wlData.length} tag` : '';
+
+  if (!wlData || !wlData.length) {
+    body.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="bi bi-wifi-off"></i>Nessun tag in whitelist.<br>Clicca <b>Aggiungi Tag</b> per iniziare.</div></td></tr>`;
+    return;
+  }
+
+  const sorted = [...wlData].sort((a,b) => new Date(b.added_at) - new Date(a.added_at));
+  body.innerHTML = sorted.map(e => `
+    <tr>
+      <td><span class="tag-id">${esc(e.uid)}</span></td>
+      <td>${esc(e.name)}</td>
+      <td><span class="badge-type badge-${e.type === 'DESFIRE' ? 'desfire' : 'plain'}">${esc(e.type)}</span></td>
+      <td style="color:var(--dim);font-size:12px">${fmtDate(e.added_at)}</td>
+      <td style="color:var(--dim);font-size:12px">${fmtDate(e.last_access)}</td>
+      <td style="text-align:center">${e.access_count || 0}</td>
+      <td>
+        <div class="action-btns">
+          <button class="btn-xs" onclick="openEdit('${esc(e.uid)}','${esc(e.name)}')"><i class="bi bi-pencil"></i> Modifica</button>
+          <button class="btn-xs danger" onclick="openDelete('${esc(e.uid)}','${esc(e.name)}')"><i class="bi bi-trash3"></i> Rimuovi</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+async function startAdd() {
+  document.getElementById('stepMode').style.display = '';
+  document.getElementById('stepWaiting').style.display = 'none';
+  document.getElementById('stepTag').style.display = 'none';
+  document.getElementById('stepTimeout').style.display = 'none';
+  document.getElementById('stepError').style.display = 'none';
+  document.getElementById('addConfirmBtn').style.display = '';
+  document.getElementById('addRetryBtn').style.display = 'none';
+  document.getElementById('addBtn').disabled = true;
+  document.getElementById('addModalTitle').textContent = 'Aggiungi Tag NFC';
+  showModal('addModal');
+}
+
+async function confirmAdd() {
+  const mode = document.querySelector('input[name="mode"]:checked')?.value || 'desfire-new';
+  const name = document.getElementById('tagNameStep1').value.trim();
+  
+  if (!name) { toast('Inserisci un nominativo', false); return; }
+  if (name.length > 64) { toast('Nominativo max 64 caratteri', false); return; }
+
+  document.getElementById('stepMode').style.display = 'none';
+  document.getElementById('stepWaiting').style.display = '';
+  document.getElementById('stepTag').style.display = 'none';
+  document.getElementById('addConfirmBtn').style.display = 'none';
+  
+  cdSeconds = 30;
+  updateCountdown();
+  clearInterval(cdTimer);
+  cdTimer = setInterval(() => {
+    cdSeconds--;
+    updateCountdown();
+    if (cdSeconds <= 0) clearInterval(cdTimer);
+  }, 1000);
+
+  try {
+    const r = await fetch('/api/whitelist/enroll', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, mode})
+    });
+    if (!r.ok) {
+      throw new Error((await r.json()).error || r.statusText);
+    }
+  } catch(e) {
+    toast('Errore avvio enrollment: ' + e.message, false);
+    closeAddModal();
+    return;
+  }
+
+  listenEnrollEvents(mode, name);
+}
+
+function updateCountdown() {
+  document.getElementById('cdNum').textContent = cdSeconds;
+  const frac = Math.max(0, cdSeconds / 30);
+  document.getElementById('cdCircle').style.strokeDashoffset = circleLen * (1 - frac);
+}
+
+function listenEnrollEvents(mode, name) {
+  if (enrollEventSource) enrollEventSource.close();
+  
+  enrollEventSource = new EventSource('/api/whitelist/enroll/events');
+  
+  enrollEventSource.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      handleEnrollEvent(data, mode, name);
+    } catch(e) {
+      console.error('SSE parse error:', e);
+    }
+  };
+  
+  enrollEventSource.onerror = () => {
+    clearInterval(cdTimer);
+    enrollEventSource.close();
+    document.getElementById('stepWaiting').style.display = 'none';
+    document.getElementById('stepTimeout').style.display = '';
+    document.getElementById('addRetryBtn').style.display = '';
+  };
+}
+
+function handleEnrollEvent(evt, mode, name) {
+  switch(evt.event) {
+    case 'waiting':
+    case 'waiting-format':
+      document.getElementById('waitingMsg').textContent = evt.msg || 'Avvicina il tag…';
+      break;
+
+    case 'waiting-enroll':
+      // Fase 2 DESFire: rimostra il countdown per la riavvicinata
+      document.getElementById('stepTag').style.display = 'none';
+      document.getElementById('stepWaiting').style.display = '';
+      document.getElementById('waitingMsg').textContent = evt.msg || 'Riavvicina il tag al lettore';
+      cdSeconds = evt.timeout_sec || 30;
+      updateCountdown();
+      clearInterval(cdTimer);
+      cdTimer = setInterval(() => {
+        cdSeconds--;
+        updateCountdown();
+        if (cdSeconds <= 0) clearInterval(cdTimer);
+      }, 1000);
+      break;
+
+    case 'format-ok':
+      clearInterval(cdTimer);
+      document.getElementById('stepWaiting').style.display = 'none';
+      document.getElementById('stepTag').style.display = '';
+      document.getElementById('detectedTagId').textContent = evt.uid || '—';
+      document.getElementById('formatOKMsg').textContent = evt.msg || '';
+      break;
+
+    case 'enrolled':
+      clearInterval(cdTimer);
+      enrollEventSource.close();
+      document.getElementById('stepWaiting').style.display = 'none';
+      document.getElementById('stepTag').style.display = 'none';
+      document.getElementById('addModalTitle').textContent = 'Tag registrato!';
+      toast('Tag ' + (evt.name || evt.uid) + ' aggiunto con successo', true);
+      setTimeout(() => {
+        closeAddModal();
+        loadList();
+      }, 1500);
+      break;
+
+    case 'error':
+      clearInterval(cdTimer);
+      enrollEventSource.close();
+      document.getElementById('stepWaiting').style.display = 'none';
+      document.getElementById('stepTag').style.display = 'none';
+      document.getElementById('stepError').style.display = '';
+      document.getElementById('errorMsg').textContent = evt.msg || 'Errore sconosciuto';
+      document.getElementById('addRetryBtn').style.display = '';
+      document.getElementById('addConfirmBtn').style.display = 'none';
+      break;
+  }
+}
+
+function retryAdd() {
+  if (enrollEventSource) enrollEventSource.close();
+  confirmAdd();
+}
+
+function closeAddModal() {
+  clearInterval(cdTimer);
+  if (enrollEventSource) enrollEventSource.close();
+  hideModal('addModal');
+  document.getElementById('addBtn').disabled = false;
+}
+
+function openEdit(uid, name) {
+  editTarget = uid;
+  document.getElementById('editTagId').textContent = uid;
+  document.getElementById('editNameInput').value = name;
+  showModal('editModal');
+  setTimeout(() => document.getElementById('editNameInput').focus(), 100);
+}
+
+async function confirmEdit() {
+  const name = document.getElementById('editNameInput').value.trim();
+  if (!name) { toast('Inserisci un nominativo', false); return; }
+  try {
+    const r = await fetch('/api/whitelist/' + encodeURIComponent(editTarget), {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name})
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    toast('Nominativo aggiornato', true);
+    closeEditModal();
+    loadList();
+  } catch(e) {
+    toast('Errore: ' + e.message, false);
+  }
+}
+
+function closeEditModal() { hideModal('editModal'); }
+
+function openDelete(uid, name) {
+  deleteTarget = uid;
+  document.getElementById('deleteTagId').textContent = uid;
+  document.getElementById('deleteTagName').textContent = name;
+  showModal('deleteModal');
+}
+
+async function confirmDelete() {
+  try {
+    const r = await fetch('/api/whitelist/' + encodeURIComponent(deleteTarget), {
+      method: 'DELETE'
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    toast('Tag rimosso', true);
+    closeDeleteModal();
+    loadList();
+  } catch(e) {
+    toast('Errore: ' + e.message, false);
+  }
+}
+
+function closeDeleteModal() { hideModal('deleteModal'); }
+
+loadList();
+</script>
+</body>
+</html>

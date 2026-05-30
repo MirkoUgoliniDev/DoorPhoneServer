@@ -47,6 +47,8 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.page==='crontab')loadCron();
     if(t.dataset.page==='log2ram'){loadLog2Ram();}else{stopLog2RamPoll();}
     if(t.dataset.page==='esp32'){startESP32Poll();}else{stopESP32Poll();}
+    if(t.dataset.page==='nfcwhitelist'){if(typeof _nfcPageActivated==='function')_nfcPageActivated();}
+    else{if(typeof _nfcPageDeactivated==='function')_nfcPageDeactivated();}
   });
 });
 
@@ -2202,7 +2204,7 @@ function pollESP32(){
     if(area&&log.length>0){
       area.value=log.slice().reverse().map(e=>{
         const t=new Date(e.time).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        return '['+t+'] '+e.result+(e.result==='OK'?' — accesso concesso':' — accesso negato');
+        return '['+t+'] '+e.result;
       }).join('\n');
     }
   }).catch(()=>{});
