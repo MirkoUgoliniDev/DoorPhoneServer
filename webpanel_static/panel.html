@@ -120,6 +120,7 @@
 <div class="tab" data-page="crontab">Crontab</div>
 <div class="tab" data-page="log2ram">Log2Ram</div>
 <div class="tab" data-page="esp32">ESP32</div>
+<div class="tab" data-page="nfcwhitelist"><i class="bi bi-wifi"></i> NFC Whitelist</div>
 </div>
 
 <!-- DASHBOARD -->
@@ -643,13 +644,499 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   </div>
 </div>
 
-<h3 style="font-size:14px;font-weight:600;margin:0 0 8px">Log Tessere <span style="font-weight:400;color:var(--dim);font-size:12px">(ultimi 50 eventi)</span></h3>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+  <h3 style="font-size:14px;font-weight:600;margin:0">Log Tessere <span style="font-weight:400;color:var(--dim);font-size:12px">(ultimi 50 eventi)</span></h3>
+  <button class="btn btn-sm" onclick="esp32ClearCardLog()" style="font-size:12px;padding:3px 12px;background:transparent;border:1px solid var(--border);color:var(--dim);border-radius:5px;cursor:pointer"><i class="bi bi-trash3"></i> Clear</button>
+</div>
 <textarea id="esp32CardLog" readonly
   style="width:100%;height:170px;background:#0a0f1a;border:1px solid var(--border);border-radius:6px;padding:10px;font-family:monospace;font-size:12px;color:#e2e8f0;resize:vertical;box-sizing:border-box;line-height:1.5"
   placeholder="Nessun evento tessera ricevuto..."></textarea>
 </div>
 </div>
 
+<!-- NFC Whitelist page -->
+<div class="page" id="page-nfcwhitelist">
+
+<!-- Modal Aggiungi — SSE-driven, nuovo protocollo -->
+<div class="modal-overlay" id="nfcAddModal">
+<div class="modal-box" style="width:440px;max-width:96vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-wifi"></i></div>
+    <div class="modal-title" id="nfcAddTitle">Aggiungi Tag NFC</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Step 1: scelta modalità + nome -->
+    <div id="nfcStepMode">
+      <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:6px">Nominativo (max 64 caratteri):</label>
+      <input type="text" id="nfcNameInput" placeholder="Es. Mario Rossi" maxlength="64" autocomplete="off"
+        style="background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;margin-bottom:14px">
+      <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:8px">Tipo di tag:</label>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
+          <input type="radio" name="nfcMode" value="plain"> <div><div style="font-weight:700">Tag Normale</div><div style="font-size:12px;color:var(--dim)">MIFARE Classic, NTAG</div></div>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
+          <input type="radio" name="nfcMode" value="desfire-existing"> <div><div style="font-weight:700">DESFire (già configurato)</div><div style="font-size:12px;color:var(--dim)">Ha già la nostra chiave</div></div>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
+          <input type="radio" name="nfcMode" value="desfire-new" checked> <div><div style="font-weight:700">DESFire (nuovo da inizializzare)</div><div style="font-size:12px;color:var(--dim)">Va inizializzato prima</div></div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Step 2: countdown attesa tag -->
+    <div id="nfcStepListen" style="display:none">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div style="position:relative;width:80px;height:80px;margin:0 auto">
+          <svg width="80" height="80" style="transform:rotate(-90deg)">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" stroke-width="6"/>
+            <circle id="nfcCdCircle" cx="40" cy="40" r="34" fill="none" stroke="var(--accent)" stroke-width="6"
+              stroke-linecap="round" stroke-dasharray="213.6" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear"/>
+          </svg>
+          <div id="nfcCdNum" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:22px;font-weight:700;color:var(--accent)">30</div>
+        </div>
+        <div id="nfcWaitMsg" style="font-size:14px;color:var(--dim);text-align:center">Avvicina il tag al lettore…</div>
+        <!-- Fase progress (es. "Fase 1 di 2") -->
+        <div id="nfcPhaseLabel" style="font-size:12px;color:var(--dim)"></div>
+      </div>
+    </div>
+
+    <!-- Step 3: tag formato OK (DESFire fase 1) -->
+    <div id="nfcStepFormatOK" style="display:none">
+      <div style="background:#0a0f1a;border:1px solid var(--accent);border-radius:8px;padding:14px 18px;text-align:center">
+        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Tag inizializzato</div>
+        <div id="nfcFormatUID" style="font-family:monospace;font-size:18px;color:var(--accent);font-weight:700">—</div>
+      </div>
+      <div id="nfcFormatMsg" style="text-align:center;font-size:13px;color:var(--dim);margin-top:8px"></div>
+    </div>
+
+    <!-- Step 4: errore -->
+    <div id="nfcStepError" style="display:none;text-align:center">
+      <i class="bi bi-exclamation-triangle" style="font-size:36px;color:#ef4444;opacity:.7;display:block;margin-bottom:10px"></i>
+      <div id="nfcErrorMsg" style="color:var(--dim)"></div>
+    </div>
+
+    <!-- Step 5: timeout -->
+    <div id="nfcStepTimeout" style="display:none;text-align:center;color:var(--dim)">
+      <i class="bi bi-clock-history" style="font-size:36px;opacity:.4;display:block;margin-bottom:10px"></i>
+      Timeout: nessun tag rilevato.
+    </div>
+
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="nfcCloseAdd()">Annulla</button>
+    <button class="modal-btn primary" id="nfcStartBtn" onclick="nfcDoStart()">Avvia procedura</button>
+    <button class="modal-btn primary" id="nfcRetryBtn" style="display:none" onclick="nfcRetry()">Riprova</button>
+  </div>
+</div>
+</div>
+
+<!-- Modal Modifica -->
+<div class="modal-overlay" id="nfcEditModal">
+<div class="modal-box" style="width:380px;max-width:95vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-pencil"></i></div>
+    <div class="modal-title">Modifica Nominativo</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+    <div style="font-size:12px;color:var(--dim)">Tag: <span id="nfcEditId" style="font-family:monospace;color:var(--accent)">—</span></div>
+    <input type="text" id="nfcEditName" placeholder="Nominativo" maxlength="64"
+      style="background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box">
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="document.getElementById('nfcEditModal').classList.remove('show')">Annulla</button>
+    <button class="modal-btn primary" onclick="nfcConfirmEdit()">Salva</button>
+  </div>
+</div>
+</div>
+
+<!-- Modal Rimozione -->
+<div class="modal-overlay" id="nfcDeleteModal">
+<div class="modal-box" style="width:360px;max-width:95vw">
+  <div class="modal-header">
+    <div class="modal-icon warn">⚠</div>
+    <div class="modal-title">Rimuovi Tag</div>
+  </div>
+  <div class="modal-body">
+    Rimuovere il tag <span id="nfcDelId" style="font-family:monospace;color:var(--accent)">—</span> (<span id="nfcDelName">—</span>)?
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="document.getElementById('nfcDeleteModal').classList.remove('show')">Annulla</button>
+    <button class="modal-btn danger" onclick="nfcConfirmDelete()">Rimuovi</button>
+  </div>
+</div>
+</div>
+
+<div class="card">
+  <h2><i class="bi bi-wifi"></i> NFC Whitelist</h2>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <button class="btn btn-primary" onclick="nfcStartAdd()" id="nfcAddBtn">
+      <i class="bi bi-plus-circle"></i> Aggiungi Tag
+    </button>
+    <button class="btn" onclick="nfcSync()" style="border:1px solid var(--border);background:transparent;color:var(--dim)">
+      <i class="bi bi-arrow-repeat"></i> Sync ESP32
+    </button>
+    <button class="btn" onclick="nfcClearAll()" style="border:1px solid rgba(239,68,68,.5);background:transparent;color:#ef4444">
+      <i class="bi bi-trash3-fill"></i> Rimuovi tutti
+    </button>
+    <span style="margin-left:auto;font-size:13px;color:var(--dim)" id="nfcCount"></span>
+  </div>
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:14px" id="nfcTable">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap">UID</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Nominativo</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Tipo</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap">Aggiunto il</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap">Ultimo accesso</th>
+          <th style="text-align:center;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Accessi</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Azioni</th>
+        </tr>
+      </thead>
+      <tbody id="nfcBody">
+        <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--dim)">Caricamento…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Log USB seriale -->
+<div class="card" style="margin-top:16px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <h2 style="margin:0"><i class="bi bi-terminal"></i> Log USB seriale</h2>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dim);margin-left:auto">
+      <input type="checkbox" id="nfcLogAuto" checked> Auto-refresh
+    </label>
+    <button onclick="nfcLogClear()" style="padding:4px 12px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer">
+      <i class="bi bi-trash3"></i> Clear
+    </button>
+  </div>
+  <textarea id="nfcLogArea" readonly
+    style="width:100%;height:220px;background:#070b14;border:1px solid var(--border);color:#94a3b8;border-radius:6px;padding:10px;font-family:'Fira Code',monospace;font-size:12px;resize:vertical;box-sizing:border-box;white-space:pre"></textarea>
+</div>
+
+</div>
+
+<script>
+// ── NFC Whitelist (nuovo protocollo SSE) ──────────────────────────────────────
+let nfcData=[], nfcCdTimer=null, nfcEnrollSrc=null, nfcCdSec=30;
+let nfcEditTarget='', nfcDeleteTarget='';
+let nfcLogTimer=null;
+
+function nfcFmtDate(iso){
+  if(!iso)return'—';
+  const d=new Date(iso);
+  return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+}
+function nfcEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+async function loadNfcWhitelist(){
+  try{
+    const r=await fetch('/api/whitelist');
+    if(!r.ok)throw new Error(r.statusText);
+    nfcData=await r.json()||[];
+    nfcRender();
+  }catch(e){
+    document.getElementById('nfcBody').innerHTML=`<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red)">Errore: ${e.message}</td></tr>`;
+  }
+}
+
+function nfcRender(){
+  const body=document.getElementById('nfcBody');
+  const count=document.getElementById('nfcCount');
+  count.textContent=nfcData.length?`${nfcData.length} tag`:'';
+  if(!nfcData||!nfcData.length){
+    body.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--dim)"><i class="bi bi-wifi-off" style="font-size:40px;opacity:.3;display:block;margin-bottom:10px"></i>Nessun tag in whitelist.</td></tr>`;
+    return;
+  }
+  const sorted=[...nfcData].sort((a,b)=>new Date(b.added_at)-new Date(a.added_at));
+  body.innerHTML=sorted.map(e=>`
+    <tr style="transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border)"><span style="font-family:monospace;color:var(--accent);font-size:13px;letter-spacing:.05em">${nfcEsc(e.uid||'—')}</span></td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border)">${nfcEsc(e.name||'—')}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+        ${e.type==='DESFIRE'
+          ?'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)">DESFIRE</span>'
+          :'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(94,234,212,.15);color:#5eecd4;border:1px solid rgba(94,234,212,.3)">'+(e.type||'PLAIN')+'</span>'}
+      </td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-size:12px">${nfcFmtDate(e.added_at)}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-size:12px">${nfcFmtDate(e.last_access)}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:13px">${e.access_count||0}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button onclick="nfcOpenEdit('${nfcEsc(e.uid)}','${nfcEsc(e.name)}')" style="padding:4px 10px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer"><i class="bi bi-pencil"></i> Modifica</button>
+          <button onclick="nfcOpenDelete('${nfcEsc(e.uid)}','${nfcEsc(e.name)}')" style="padding:4px 10px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer"><i class="bi bi-trash3"></i> Rimuovi</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+// ── Enrollment (SSE-driven) ───────────────────────────────────────────────────
+
+function nfcStartAdd(){
+  // Reset UI
+  document.getElementById('nfcStepMode').style.display='';
+  document.getElementById('nfcStepListen').style.display='none';
+  document.getElementById('nfcStepFormatOK').style.display='none';
+  document.getElementById('nfcStepError').style.display='none';
+  document.getElementById('nfcStepTimeout').style.display='none';
+  document.getElementById('nfcStartBtn').style.display='';
+  document.getElementById('nfcRetryBtn').style.display='none';
+  document.getElementById('nfcNameInput').value='';
+  document.getElementById('nfcAddTitle').textContent='Aggiungi Tag NFC';
+  document.getElementById('nfcAddBtn').disabled=true;
+  document.getElementById('nfcAddModal').classList.add('show');
+  setTimeout(()=>document.getElementById('nfcNameInput').focus(),120);
+}
+
+async function nfcDoStart(){
+  const name=document.getElementById('nfcNameInput').value.trim();
+  if(!name){toastCenter('Inserisci un nominativo','err');return;}
+  if(name.length>64){toastCenter('Nome max 64 caratteri','err');return;}
+  const mode=document.querySelector('input[name="nfcMode"]:checked')?.value||'desfire-new';
+
+  document.getElementById('nfcStepMode').style.display='none';
+  document.getElementById('nfcStepListen').style.display='';
+  document.getElementById('nfcStartBtn').style.display='none';
+  document.getElementById('nfcWaitMsg').textContent=mode==='desfire-new'?'Avvicina il tag DESFire per inizializzarlo':'Avvicina il tag al lettore…';
+  document.getElementById('nfcPhaseLabel').textContent=mode==='desfire-new'?'Fase 1 di 2':'';
+
+  nfcCdSec=30; nfcUpdateCd();
+  clearInterval(nfcCdTimer);
+  nfcCdTimer=setInterval(()=>{nfcCdSec--;nfcUpdateCd();if(nfcCdSec<=0)clearInterval(nfcCdTimer);},1000);
+
+  try{
+    const r=await fetch('/api/whitelist/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mode})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));nfcShowError(d.error||r.statusText);return;}
+  }catch(e){nfcShowError('Errore di rete: '+e);return;}
+
+  nfcListenSSE();
+}
+
+function nfcListenSSE(){
+  if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
+  nfcEnrollSrc=new EventSource('/api/whitelist/enroll/events');
+  nfcEnrollSrc.onmessage=(ev)=>{
+    try{nfcHandleSSE(JSON.parse(ev.data));}catch(e){console.error('SSE parse',e);}
+  };
+  nfcEnrollSrc.onerror=()=>{
+    nfcEnrollSrc.close();nfcEnrollSrc=null;
+    nfcShowTimeout();
+  };
+}
+
+function nfcHandleSSE(d){
+  switch(d.event){
+    case 'waiting':
+    case 'waiting-format':
+      document.getElementById('nfcWaitMsg').textContent=d.msg||'Avvicina il tag al lettore…';
+      break;
+    case 'waiting-enroll':
+      document.getElementById('nfcStepFormatOK').style.display='none';
+      document.getElementById('nfcStepListen').style.display='';
+      document.getElementById('nfcWaitMsg').textContent=d.msg||'Riavvicina il tag al lettore';
+      document.getElementById('nfcPhaseLabel').textContent='Fase 2 di 2';
+      nfcCdSec=d.timeout_sec||30; nfcUpdateCd();
+      clearInterval(nfcCdTimer);
+      nfcCdTimer=setInterval(()=>{nfcCdSec--;nfcUpdateCd();if(nfcCdSec<=0)clearInterval(nfcCdTimer);},1000);
+      break;
+    case 'format-ok':
+      clearInterval(nfcCdTimer);
+      document.getElementById('nfcStepListen').style.display='none';
+      document.getElementById('nfcStepFormatOK').style.display='';
+      document.getElementById('nfcFormatUID').textContent=d.uid||'—';
+      document.getElementById('nfcFormatMsg').textContent=d.msg||'';
+      break;
+    case 'enrolled':
+      clearInterval(nfcCdTimer);
+      if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
+      document.getElementById('nfcAddTitle').textContent='Tag registrato!';
+      document.getElementById('nfcStepListen').style.display='none';
+      document.getElementById('nfcStepFormatOK').style.display='none';
+      toastCenter('Tag '+(d.name||d.uid)+' aggiunto','ok');
+      setTimeout(()=>{nfcCloseAdd();loadNfcWhitelist();},1400);
+      break;
+    case 'error':
+      clearInterval(nfcCdTimer);
+      if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
+      if(d.code==='timeout'){nfcShowTimeout();}else{nfcShowError(d.msg||'Errore sconosciuto');}
+      break;
+  }
+}
+
+function nfcShowError(msg){
+  clearInterval(nfcCdTimer);
+  document.getElementById('nfcStepListen').style.display='none';
+  document.getElementById('nfcStepFormatOK').style.display='none';
+  document.getElementById('nfcStepMode').style.display='none';
+  document.getElementById('nfcStepError').style.display='';
+  document.getElementById('nfcStepTimeout').style.display='none';
+  document.getElementById('nfcErrorMsg').textContent=msg;
+  document.getElementById('nfcRetryBtn').style.display='';
+  document.getElementById('nfcStartBtn').style.display='none';
+}
+
+function nfcShowTimeout(){
+  clearInterval(nfcCdTimer);
+  document.getElementById('nfcStepListen').style.display='none';
+  document.getElementById('nfcStepFormatOK').style.display='none';
+  document.getElementById('nfcStepMode').style.display='none';
+  document.getElementById('nfcStepError').style.display='none';
+  document.getElementById('nfcStepTimeout').style.display='';
+  document.getElementById('nfcRetryBtn').style.display='';
+  document.getElementById('nfcStartBtn').style.display='none';
+}
+
+function nfcRetry(){
+  if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
+  fetch('/api/whitelist/enroll/cancel',{method:'DELETE'}).catch(()=>{});
+  nfcStartAdd();
+}
+
+function nfcCloseAdd(){
+  clearInterval(nfcCdTimer);
+  if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
+  fetch('/api/whitelist/enroll/cancel',{method:'DELETE'}).catch(()=>{});
+  document.getElementById('nfcAddModal').classList.remove('show');
+  document.getElementById('nfcAddBtn').disabled=false;
+}
+
+function nfcUpdateCd(){
+  document.getElementById('nfcCdNum').textContent=nfcCdSec;
+  document.getElementById('nfcCdCircle').style.strokeDashoffset=213.6*(1-Math.max(0,nfcCdSec)/30);
+}
+
+// ── Sync ─────────────────────────────────────────────────────────────────────
+
+async function nfcSync(){
+  try{
+    const r=await fetch('/api/whitelist/sync');
+    if(!r.ok)throw new Error(r.statusText);
+    const d=await r.json();
+    const msg=d.in_sync?'In sync ('+d.esp32_count+' tag ESP32, '+d.json_count+' JSON)'
+      :'DIFFERENZE: esp32-only='+JSON.stringify(d.esp32_only)+' json-only='+JSON.stringify(d.json_only);
+    toastCenter(msg, d.in_sync?'ok':'err');
+    loadNfcWhitelist();
+  }catch(e){toastCenter('Sync fallita: '+e,'err');}
+}
+
+// ── Edit ─────────────────────────────────────────────────────────────────────
+
+function nfcOpenEdit(uid,name){
+  nfcEditTarget=uid;
+  document.getElementById('nfcEditId').textContent=uid;
+  document.getElementById('nfcEditName').value=name;
+  document.getElementById('nfcEditModal').classList.add('show');
+  setTimeout(()=>document.getElementById('nfcEditName').focus(),100);
+}
+
+async function nfcConfirmEdit(){
+  const name=document.getElementById('nfcEditName').value.trim();
+  if(!name){toastCenter('Inserisci un nominativo','err');return;}
+  try{
+    const r=await fetch('/api/whitelist/'+encodeURIComponent(nfcEditTarget),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const d=await r.json();
+    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),'err');return;}
+    toastCenter('Nominativo aggiornato','ok');
+    document.getElementById('nfcEditModal').classList.remove('show');
+    loadNfcWhitelist();
+  }catch(e){toastCenter('Errore di rete','err');}
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+function nfcOpenDelete(uid,name){
+  nfcDeleteTarget=uid;
+  document.getElementById('nfcDelId').textContent=uid;
+  document.getElementById('nfcDelName').textContent=name;
+  document.getElementById('nfcDeleteModal').classList.add('show');
+}
+
+async function nfcConfirmDelete(){
+  try{
+    const r=await fetch('/api/whitelist/'+encodeURIComponent(nfcDeleteTarget),{method:'DELETE'});
+    const d=await r.json();
+    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),'err');return;}
+    toastCenter('Tag rimosso','ok');
+    document.getElementById('nfcDeleteModal').classList.remove('show');
+    loadNfcWhitelist();
+  }catch(e){toastCenter('Errore di rete','err');}
+}
+
+// ── Clear All ────────────────────────────────────────────────────────────────
+
+function nfcClearAll(){
+  confirmModal(
+    'Rimuovi tutti i tag',
+    'Cancellare <b>tutti</b> i tag dalla whitelist JSON <b>e</b> dalla NVS dell\'ESP32?<br><br>'
+    +'<div style="padding:8px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);border-radius:6px;font-size:13px">⚠️ Questa operazione è irreversibile.</div>',
+    'warn','danger','Rimuovi tutti'
+  ).then(ok=>{
+    if(!ok)return;
+    fetch('/api/whitelist/clearall',{method:'POST'})
+      .then(r=>r.json())
+      .then(d=>{
+        toastCenter(d.esp32_cleared?'Tutti i tag rimossi (JSON + ESP32)':'Tag rimossi dal JSON (ESP32 non raggiunto)',d.esp32_cleared?'ok':'err');
+        loadNfcWhitelist();
+      })
+      .catch(e=>toastCenter('Errore: '+e,'err'));
+  });
+}
+
+// ── USB Log ───────────────────────────────────────────────────────────────────
+
+function nfcLogRefresh(){
+  fetch('/panel/api/esp32/usblog').then(r=>r.json()).then(lines=>{
+    const el=document.getElementById('nfcLogArea');
+    if(!lines||!lines.length){el.value='(nessun log)';return;}
+    el.value=lines.join('\n');
+    el.scrollTop=el.scrollHeight;
+  }).catch(()=>{});
+}
+
+function nfcLogClear(){
+  fetch('/panel/api/esp32/usblog',{method:'POST'}).then(()=>{
+    document.getElementById('nfcLogArea').value='';
+  }).catch(()=>{});
+}
+
+// Avvia o ferma auto-refresh log USB
+function nfcLogAutoToggle(){
+  clearInterval(nfcLogTimer);
+  nfcLogTimer=null;
+  if(document.getElementById('nfcLogAuto').checked){
+    nfcLogRefresh();
+    nfcLogTimer=setInterval(nfcLogRefresh,1500);
+  }
+}
+
+document.getElementById('nfcLogAuto').addEventListener('change',nfcLogAutoToggle);
+
+// Avvia auto-refresh quando la pagina NFC è visibile
+// (viene chiamato da panel.js al cambio tab)
+function _nfcPageActivated(){
+  loadNfcWhitelist();
+  if(document.getElementById('nfcLogAuto').checked){
+    nfcLogRefresh();
+    clearInterval(nfcLogTimer);
+    nfcLogTimer=setInterval(nfcLogRefresh,1500);
+  }
+}
+function _nfcPageDeactivated(){
+  clearInterval(nfcLogTimer);nfcLogTimer=null;
+}
+</script>
+
+
+<script>
+function esp32ClearCardLog(){
+  fetch('/panel/api/esp32/cardlog/clear',{method:'POST'})
+    .then(()=>{ document.getElementById('esp32CardLog').value=''; })
+    .catch(()=>{ document.getElementById('esp32CardLog').value=''; });
+}
+</script>
 <script src="/static/ace/ace.min.js"></script>
 <script src="/static/ace/mode-xml.min.js"></script>
 <script src="/static/ace/theme-tomorrow_night.min.js"></script>

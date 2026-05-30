@@ -63,6 +63,7 @@ type DoorPhoneServer struct {
 	IsPlayStream    bool
 	GPIOEnabled     bool
 	USBBridge       *USBBridge
+	NFCWhitelist    *NFCWhitelistManager
 }
 
 // ChannelsListStruct contiene le informazioni di un canale Mumble per la visualizzazione in lista.
@@ -162,6 +163,23 @@ func Init(file string, ServerIndex string) {
 	b.USBBridge = usbBridge
 	go NewGPIOUsb(usbBridge).Run(ctx)
 	go NewSmartcard(usbBridge).Run(ctx)
+
+	nfcWL := NewNFCWhitelistManager()
+	b.NFCWhitelist = nfcWL
+	usbBridge.SetNFCManager(nfcWL)
+
+	// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
+	go func() {
+		time.Sleep(8 * time.Second)
+		tags, err := usbBridge.SendTagList(5 * time.Second)
+		if err != nil {
+			log.Printf("[NFC] sync avvio fallita: %v", err)
+			return
+		}
+		result := nfcWL.SyncFromESP32(tags)
+		log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
+			result["esp32_count"], result["json_count"], result["in_sync"])
+	}()
 
 	if Config.Global.Software.RemoteControl.MQTT.Enabled {
 		log.Printf("info: Attempting to Contact MQTT Server")
