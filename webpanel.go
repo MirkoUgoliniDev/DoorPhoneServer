@@ -788,8 +788,8 @@ func (b *DoorPhoneServer) handleService(w http.ResponseWriter, r *http.Request) 
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"%s","uptime":"%s","version":"%s","connected":%t,"heartbeat_enabled":%t,"heartbeat_count":%d,"heartbeat_period_ms":%d,"heartbeat_last_time":"%s"}`,
-			status, uptime, doorphoneserverVersion, IsConnected.Load(),
+		fmt.Fprintf(w, `{"status":"%s","uptime":"%s","version":"%s","build_time":"%s","connected":%t,"heartbeat_enabled":%t,"heartbeat_count":%d,"heartbeat_period_ms":%d,"heartbeat_last_time":"%s"}`,
+			status, uptime, doorphoneserverVersion, BuildTime, IsConnected.Load(),
 			Config.Global.Hardware.HeartBeat.Enabled, HeartBeatCount.Load(),
 			Config.Global.Hardware.HeartBeat.Periodmsecs, hbLastStr)
 		return

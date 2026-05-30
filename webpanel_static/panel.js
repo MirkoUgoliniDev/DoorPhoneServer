@@ -93,7 +93,9 @@ function updateDashboard(){
       svcBtn.style.borderRadius='6px';
       svcBtn.dataset.state=svcActive?'on':'off';
     }
-    document.getElementById('panelVer').textContent='v'+d.version+(d.connected?' — Connected':' — Disconnected');    // heartbeat
+    const connStr = d.connected ? ' — Connected' : ' — Disconnected';
+    const buildStr = (d.build_time && d.build_time !== 'unknown') ? '   build ' + d.build_time : '';
+    document.getElementById('panelVer').textContent = 'v' + d.version + connStr + buildStr;
     const hbBox=document.getElementById('hbBox');
     if(d.heartbeat_enabled){
       hbBox.style.display='inline-flex';

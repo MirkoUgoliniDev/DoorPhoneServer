@@ -4,5 +4,9 @@ package doorphoneserver
 
 const (
 	// doorphoneserverVersion è la versione corrente del software doorphoneserver
-	doorphoneserverVersion  string = "3.0.0"
+	doorphoneserverVersion string = "3.0.0"
 )
+
+// BuildTime viene iniettato al compile time via -ldflags.
+// Esempio: go build -ldflags "-X 'doorphoneserver.BuildTime=2026-05-30 16:33'"
+var BuildTime = "unknown"

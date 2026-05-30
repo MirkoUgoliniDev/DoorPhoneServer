@@ -115,6 +115,17 @@ type tagListResult struct {
 	tags map[string]string
 }
 
+// normalizeUID porta un UID hex al formato standard 14 caratteri (7 byte).
+// I tag a 4 byte (8 hex) vengono paddati con zeri: "1A09C601" → "1A09C601000000".
+// UIDs già a 14 char vengono restituiti invariati.
+func normalizeUID(uid string) string {
+	uid = strings.ToUpper(uid)
+	if len(uid) < 14 && len(uid)%2 == 0 {
+		uid = uid + strings.Repeat("0", 14-len(uid))
+	}
+	return uid
+}
+
 const usbLogMax = 200
 
 // usbLogBuf è il ring buffer globale del log USB (← e →).
@@ -443,8 +454,12 @@ func (b *USBBridge) dispatch(line string) {
 
 	case strings.HasPrefix(line, "TAG-DEL-FAIL"):
 		// "TAG-DEL-FAIL NOT-FOUND" o "TAG-DEL-FAIL BAD-UID"
-		after := strings.TrimPrefix(line, "TAG-DEL-FAIL")
-		b.signalPending("TAG-DEL", "FAIL"+strings.TrimSpace(after))
+		suffix := strings.TrimSpace(strings.TrimPrefix(line, "TAG-DEL-FAIL"))
+		if suffix != "" {
+			b.signalPending("TAG-DEL", "FAIL "+suffix)
+		} else {
+			b.signalPending("TAG-DEL", "FAIL")
+		}
 
 	case line == "TAG-LIST-START":
 		b.tagListMu.Lock()
@@ -479,7 +494,7 @@ func (b *USBBridge) parseAndSendGPIO(line string) {
 		return
 	}
 	if strings.ToLower(parts[1]) == "nfc" {
-		uid := strings.ToUpper(parts[2])
+		uid := normalizeUID(parts[2])
 		b.State.addCard(ESP32CardLog{Time: time.Now(), Result: line})
 		if b.nfcMgr != nil {
 			b.nfcMgr.HandleNFCEvent(uid)
@@ -506,14 +521,14 @@ func (b *USBBridge) parseAndSendGPIO(line string) {
 }
 
 // parseTagEnrolled processa "TAG-ENROLLED <uid> <PLAIN|DESFIRE>"
-// [MODIFICATO] — il nome non fa più parte del protocollo ESP32.
+// Il nome non fa parte del protocollo ESP32; l'UID viene normalizzato a 14 char.
 func (b *USBBridge) parseTagEnrolled(line string) {
 	parts := strings.Fields(line)
 	if len(parts) < 3 {
 		log.Printf("[USB] TAG-ENROLLED malformato (attesi 3 campi): %q", line)
 		return
 	}
-	uid := strings.ToUpper(parts[1])
+	uid := normalizeUID(parts[1])
 	tagType := strings.ToUpper(parts[2])
 
 	log.Printf("[USB] tag enrolled: uid=%s tipo=%s", uid, tagType)
@@ -530,7 +545,7 @@ func (b *USBBridge) parseTagFormatOK(line string) {
 		log.Printf("[USB] TAG-FORMAT-OK malformato: %q", line)
 		return
 	}
-	uid := strings.ToUpper(parts[1])
+	uid := normalizeUID(parts[1])
 	log.Printf("[USB] tag format OK: uid=%s", uid)
 
 	if b.nfcMgr != nil {
@@ -547,7 +562,7 @@ func (b *USBBridge) handleTagEntry(line string) {
 		log.Printf("[USB] TAG-ENTRY malformato: %q", line)
 		return
 	}
-	uid := strings.ToUpper(parts[2])
+	uid := normalizeUID(parts[2])
 	b.tagListMu.Lock()
 	if b.tagListBuf != nil {
 		b.tagListBuf[uid] = ""
