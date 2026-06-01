@@ -24,7 +24,7 @@ L'app trasforma un tablet Android montato a parete nell'interfaccia del citofono
 
 ### DoorPhoneServerUSBInterface — scheda ESP32-S3 ⚠ Work in progress
 
-Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Raspberry Pi, questa scheda si interpone come **periferica USB HID/CDC**. Il Pi la vede come un dispositivo USB standard; la scheda gestisce tutta la parte hardware sul campo.
+Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Raspberry Pi, questa scheda si interpone come **periferica USB CDC** (`/dev/esp32`, 115200 baud). Il Pi la vede come un dispositivo seriale USB; la scheda gestisce tutta la parte hardware sul campo.
 
 **Vantaggi rispetto ai GPIO diretti:**
 - Nessun rischio di danneggiare il Pi con tensioni esterne
@@ -33,10 +33,39 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 - Sostituibile senza toccare il Pi: basta re-flashare l'ESP32
 
 **Cosa gestisce:**
-- Lettore RFID (accesso con badge/tessera)
-- Pulsanti di piano (più appartamenti)
-- Relè per apertura porta/cancello
-- Eventuali futuri sensori o attuatori
+- Lettore NFC/RFID DESFire EV3 (accesso con badge — autenticazione AES-128 a 3 passi)
+- Pulsanti di piano P1/P2/P3 con interrupt GPIO e debounce
+- Relè apertura porta/cancello (impulso 200ms)
+- Alimentazione tablet Android (on/off)
+- Ventola PWM 25kHz (raffreddamento quadro elettrico)
+
+**Protocollo Pi → ESP32 (comandi inviati via USB):**
+
+| Comando | Azione |
+|---------|--------|
+| `UNLOCK-DOOR` | Impulso relè portone 200ms |
+| `TABLET-ON` | Alimentazione tablet ON (GPIO17) |
+| `TABLET-OFF` | Alimentazione tablet OFF (GPIO17) |
+| `FAN-XX` | Ventola PWM al XX% (es. `FAN-75`) |
+| `GET-STATE` | Richiesta stato corrente (fan + tablet) |
+| `PING` | Watchdog keepalive (ogni 5s) |
+
+**Protocollo ESP32 → Pi (eventi e risposte via USB):**
+
+| Messaggio | Significato |
+|-----------|-------------|
+| `EVT p1 0` / `EVT p2 0` / `EVT p3 0` | Pulsante piano premuto (active-low) |
+| `RING-P1` / `RING-P2` / `RING-P3` | Chiamata dal piano (LED verde nel pannello per 2s) |
+| `UID-OK` | Tessera NFC autenticata → portone aperto |
+| `UID-KO` | Tessera NFC rifiutata |
+| `STATE FAN:75 TABLET:ON` | Risposta a `GET-STATE` — stato corrente ventola e tablet |
+| `PONG` | Risposta al PING |
+| `ACK UNLOCK-DOOR` | Conferma esecuzione apertura portone |
+| `ACK TABLET-ON` / `ACK TABLET-OFF` | Conferma cambio stato tablet |
+| `ACK FAN-XX` | Conferma impostazione ventola |
+
+**Sincronizzazione stato al boot:**  
+All'avvio della connessione USB il Pi invia automaticamente `GET-STATE`. L'ESP32 risponde con `STATE FAN:XX TABLET:ON/OFF` letto dalla NVS, così slider ventola e toggle tablet nel pannello web riflettono sempre il valore reale dell'hardware anche dopo un riavvio del Pi.
 
 > ⚠ **Repository in sviluppo** — la scheda e il firmware non sono ancora completati. Il protocollo lato server è sviluppato nel branch `GPIO-OVER-USB` di DoorPhoneServer, ma l'integrazione completa è ancora in corso. Non usare in produzione.
 
@@ -72,7 +101,7 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 | PC con terminale | Qualsiasi OS | Per connettersi via SSH durante l'install |
 
 **Hardware opzionale:**
-- **Scheda USB Interface (ESP32-S3)** ⚠ *in sviluppo* — lettore RFID, pulsanti dei piani, relè porta via USB; vedi [DoorPhoneServerUSBInterface](https://github.com/MirkoUgoliniDev/DoorPhoneServerUSBInterface)
+- **Scheda USB Interface (ESP32-S3)** ⚠ *in sviluppo* — lettore NFC DESFire EV3, pulsanti di piano, relè porta, alimentazione tablet, ventola PWM via USB; vedi [DoorPhoneServerUSBInterface](https://github.com/MirkoUgoliniDev/DoorPhoneServerUSBInterface)
 - Modulo relè GPIO 5V per controllo elettroserratura (alternativa alla scheda USB)
 - Tablet Android con [DoorPhoneAndroidApp](https://github.com/MirkoUgoliniDev/DoorPhoneAndroidApp) — display citofono a parete
 - Telecamera IP con stream RTSP (testata: Reolink)
@@ -784,4 +813,4 @@ sudo chmod 600 /home/doorphoneserver/.env
 
 ---
 
-*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4*
+*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4 — branch GPIO-OVER-USB*

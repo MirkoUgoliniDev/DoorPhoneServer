@@ -2191,23 +2191,33 @@ function pollESP32(){
     const door=document.getElementById('btnDoor');
     [fan,fanBtn,door].forEach(el=>{if(el){el.disabled=!d.connected;el.style.opacity=d.connected?'1':'0.4';}});
     const pins=d.pins||{};
+    const ringFlash=d.ring_flash||{};
+    const now=Date.now();
     function setLed(id,pin){
       const el=document.getElementById(id);
       if(!el)return;
       const pressed=pins[pin]===0; // active-low: 0 = premuto
-      el.style.background=pressed?'#22c55e':'var(--dim)';
-      el.style.boxShadow=pressed?'0 0 8px #22c55e':'none';
+      const ringing=ringFlash[pin]&&(now-ringFlash[pin])<2000;
+      el.style.background=(pressed||ringing)?'#22c55e':'var(--dim)';
+      el.style.boxShadow=(pressed||ringing)?'0 0 8px #22c55e':'none';
     }
     setLed('ledP1','p1');
     setLed('ledP2','p2');
     setLed('ledP3','p3');
-    const log=d.card_log||[];
+    setTabletSwitch(d.tablet_on||false);
+    const fanPct=d.fan_pct||0;
+    const slider=document.getElementById('fanSlider');
+    const fanVal=document.getElementById('fanVal');
+    if(slider&&fanVal&&parseInt(slider.value,10)!==fanPct){
+      slider.value=fanPct;
+      fanVal.textContent=fanPct+'%';
+    }
+    const usbLines=d.usb_log||[];
     const area=document.getElementById('esp32CardLog');
-    if(area&&log.length>0){
-      area.value=log.slice().reverse().map(e=>{
-        const t=new Date(e.time).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        return '['+t+'] '+e.result;
-      }).join('\n');
+    if(area){
+      if(usbLines.length>0){
+        area.value=usbLines.slice().reverse().join('\n');
+      }
     }
   }).catch(()=>{});
 }
@@ -2222,20 +2232,58 @@ function esp32FanSet(){
     .catch(()=>toastCenter('Errore di rete',false));
 }
 
+function setTabletSwitch(on){
+  const track=document.getElementById('tabletToggleTrack');
+  const thumb=document.getElementById('tabletToggleThumb');
+  const lbl=document.getElementById('tabletToggleLabel');
+  if(!track||!thumb||!lbl)return;
+  track.style.background=on?'#22c55e':'var(--dim)';
+  thumb.style.left=on?'22px':'2px';
+  lbl.textContent=on?'Acceso':'Spento';
+  lbl.style.color=on?'#22c55e':'var(--dim)';
+}
+
+function esp32TabletToggle(){
+  const track=document.getElementById('tabletToggleTrack');
+  if(!track)return;
+  const currentlyOn=track.style.background==='rgb(34, 197, 94)';
+  const newState=currentlyOn?'off':'on';
+  fetch('/panel/api/esp32/tablet',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'state='+newState})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        setTabletSwitch(newState==='on');
+        toastCenter('Tablet '+(newState==='on'?'acceso':'spento'),true);
+      } else {
+        toastCenter(d.error||'Errore invio comando',false);
+      }
+    })
+    .catch(()=>toastCenter('Errore di rete',false));
+}
+
+function esp32ClearCardLog(){
+  fetch('/panel/api/esp32/usblog',{method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      const area=document.getElementById('esp32CardLog');
+      if(area)area.value='';
+      toastCenter('Log USB svuotato',true);
+    })
+    .catch(()=>toastCenter('Errore di rete',false));
+}
+
 function esp32Door(){
-  confirmModal('Apri Portone','Inviare il comando di apertura portone all\'ESP32-S3?','warn','danger','Apri').then(ok=>{
-    if(!ok)return;
-    const btn=document.getElementById('btnDoor');
-    if(btn){btn.disabled=true;}
-    fetch('/panel/api/esp32/door',{method:'POST'})
-      .then(r=>r.json())
-      .then(d=>{
-        toastCenter(d.ok?'Impulso portone inviato':(d.error||'Errore invio comando'),d.ok);
-        if(btn){setTimeout(()=>{btn.disabled=false;},d.ok?3000:0);}
-      })
-      .catch(()=>{
-        toastCenter('Errore di rete',false);
-        if(btn){btn.disabled=false;}
-      });
-  });
+  const btn=document.getElementById('btnDoor');
+  if(!btn||btn.disabled)return;
+  // effetto fisico: premi giù, tieni 180ms, rilascia
+  btn.classList.add('pressing');
+  btn.disabled=true;
+  setTimeout(()=>{
+    btn.classList.remove('pressing');
+    setTimeout(()=>{btn.disabled=false;},600);
+  },180);
+  fetch('/panel/api/esp32/door',{method:'POST'})
+    .then(r=>r.json())
+    .then(d=>toastCenter(d.ok?'Portone aperto':(d.error||'Errore invio comando'),d.ok))
+    .catch(()=>toastCenter('Errore di rete',false));
 }

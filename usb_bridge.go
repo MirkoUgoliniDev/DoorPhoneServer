@@ -32,14 +32,17 @@ type ESP32CardLog struct {
 }
 
 type esp32State struct {
-	mu        sync.Mutex
-	connected bool
-	pins      map[string]int
-	cardLog   []ESP32CardLog
+	mu         sync.Mutex
+	connected  bool
+	pins       map[string]int
+	cardLog    []ESP32CardLog
+	ringFlash  map[string]time.Time
+	tabletOn   bool
+	fanPct     int
 }
 
 func newESP32State() *esp32State {
-	return &esp32State{pins: make(map[string]int)}
+	return &esp32State{pins: make(map[string]int), ringFlash: make(map[string]time.Time)}
 }
 
 func (s *esp32State) setConnected(v bool) {
@@ -79,6 +82,46 @@ func (s *esp32State) clearCards() {
 	s.mu.Lock()
 	s.cardLog = nil
 	s.mu.Unlock()
+}
+
+func (s *esp32State) setTablet(on bool) {
+	s.mu.Lock()
+	s.tabletOn = on
+	s.mu.Unlock()
+}
+
+func (s *esp32State) getTablet() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tabletOn
+}
+
+func (s *esp32State) setFanPct(pct int) {
+	s.mu.Lock()
+	s.fanPct = pct
+	s.mu.Unlock()
+}
+
+func (s *esp32State) getFanPct() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fanPct
+}
+
+func (s *esp32State) setRingFlash(floor string) {
+	s.mu.Lock()
+	s.ringFlash[floor] = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *esp32State) getRingFlash() map[string]int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]int64, len(s.ringFlash))
+	for k, v := range s.ringFlash {
+		out[k] = v.UnixMilli()
+	}
+	return out
 }
 
 func (s *esp32State) snapshot() (connected bool, pins map[string]int, logs []ESP32CardLog) {
@@ -334,6 +377,7 @@ func (b *USBBridge) connectLoop(ctx context.Context) {
 		log.Printf("[USB] ESP32-S3 connesso su %s", usbSerialPath)
 		b.State.setConnected(true)
 		b.drainSendCh()
+		b.Send("GET-STATE\n")
 		b.runSession(ctx, port)
 		b.State.setConnected(false)
 		b.State.resetPins()
@@ -415,6 +459,22 @@ func (b *USBBridge) dispatch(line string) {
 
 	case line == "PONG":
 		// watchdog ok
+
+	case strings.HasPrefix(line, "RING-P"):
+		floor := strings.ToLower(strings.TrimPrefix(line, "RING-"))
+		b.State.setRingFlash(floor)
+
+	case strings.HasPrefix(line, "STATE "):
+		// "STATE FAN:75 TABLET:ON"
+		for _, part := range strings.Fields(line)[1:] {
+			if strings.HasPrefix(part, "FAN:") {
+				if pct, err := strconv.Atoi(strings.TrimPrefix(part, "FAN:")); err == nil {
+					b.State.setFanPct(pct)
+				}
+			} else if strings.HasPrefix(part, "TABLET:") {
+				b.State.setTablet(strings.TrimPrefix(part, "TABLET:") == "ON")
+			}
+		}
 
 	case strings.HasPrefix(line, "EVT "):
 		b.parseAndSendGPIO(line)
