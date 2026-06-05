@@ -2203,7 +2203,7 @@ function pollESP32(){
       const el=document.getElementById(id);
       if(!el)return;
       const pressed=pins[pin]===0; // active-low: 0 = premuto
-      const ringing=ringFlash[pin]&&(now-ringFlash[pin])<2000;
+      const ringing=ringFlash[pin]&&(now-ringFlash[pin])<8000;
       el.style.background=(pressed||ringing)?'#22c55e':'var(--dim)';
       el.style.boxShadow=(pressed||ringing)?'0 0 8px #22c55e':'none';
     }

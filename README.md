@@ -62,7 +62,7 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 | Messaggio | Significato |
 |-----------|-------------|
 | `EVT p1 0` / `EVT p2 0` / `EVT p3 0` | Pulsante piano premuto (active-low) |
-| `RING-P1` / `RING-P2` / `RING-P3` | Chiamata dal piano (LED verde nel pannello per 2s) |
+| `RING-P1` / `RING-P2` / `RING-P3` | Chiamata dal piano (LED verde nel pannello per 8s) |
 | `EVT nfc <uid>` | Tag NFC letto in modalità normale |
 | `UID-OK` | Tessera NFC autenticata → portone aperto |
 | `UID-KO` | Tessera NFC rifiutata |

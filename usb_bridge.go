@@ -540,6 +540,11 @@ func (b *USBBridge) dispatch(line string) {
 	case strings.HasPrefix(line, "EVT "):
 		b.parseAndSendGPIO(line)
 
+	case strings.HasPrefix(line, "ACK FAN-"):
+		if pct, err := strconv.Atoi(strings.TrimPrefix(line, "ACK FAN-")); err == nil {
+			b.State.setFanPct(pct)
+		}
+
 	case strings.HasPrefix(line, "ACK TAG-SCAN PENDING"):
 		b.signalPending("ACK-SCAN", "OK")
 
