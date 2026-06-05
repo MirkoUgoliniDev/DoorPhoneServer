@@ -33,7 +33,7 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 - Sostituibile senza toccare il Pi: basta re-flashare l'ESP32
 
 **Cosa gestisce:**
-- Lettore NFC/RFID DESFire EV3 (accesso con badge — autenticazione AES-128 a 3 passi)
+- Lettore NFC/RFID DESFire EV3 (accesso con badge — autenticazione AES-128 a 3 passi, rilevamento tipo automatico)
 - Pulsanti di piano P1/P2/P3 con interrupt GPIO e debounce
 - Relè apertura porta/cancello (impulso 200ms)
 - Alimentazione tablet Android (on/off)
@@ -49,6 +49,10 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 | `FAN-XX` | Ventola PWM al XX% (es. `FAN-75`) |
 | `GET-STATE` | Richiesta stato corrente (fan + tablet) |
 | `PING` | Watchdog keepalive (ogni 5s) |
+| `TAG-SCAN` | Aggiunta tag NFC in modalità auto-detect: l'ESP32 rileva il tipo da solo |
+| `TAG-DEL <uid>` | Rimuove un tag dalla whitelist NVS |
+| `TAG-LIST` | Elenca tutti i tag autorizzati in NVS |
+| `TAG-CLEAR` | Cancella tutta la whitelist NVS |
 
 **Protocollo ESP32 → Pi (eventi e risposte via USB):**
 
@@ -56,13 +60,29 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 |-----------|-------------|
 | `EVT p1 0` / `EVT p2 0` / `EVT p3 0` | Pulsante piano premuto (active-low) |
 | `RING-P1` / `RING-P2` / `RING-P3` | Chiamata dal piano (LED verde nel pannello per 2s) |
+| `EVT nfc <uid>` | Tag NFC letto in modalità normale |
 | `UID-OK` | Tessera NFC autenticata → portone aperto |
 | `UID-KO` | Tessera NFC rifiutata |
+| `TAG-INFO <uid> PLAIN` | Tag rilevato in auto-scan: MIFARE Classic o NTAG |
+| `TAG-INFO <uid> DESFIRE-CONFIGURED` | Tag rilevato in auto-scan: DESFire già con la nostra chiave |
+| `TAG-INFO <uid> DESFIRE-NEW` | Tag rilevato in auto-scan: DESFire vergine, verrà inizializzato |
+| `TAG-ENROLLED <uid> PLAIN\|DESFIRE` | Tag aggiunto alla whitelist con successo |
+| `TAG-FORMAT-OK <uid>` | DESFire inizializzato — rimuovere e riavvicinare il tag |
+| `TAG-FORMAT-FAIL` / `TAG-FORMAT-FAIL NOT-DESFIRE` | Errore inizializzazione DESFire |
+| `TAG-ENROLL-FAIL FULL\|AUTH\|ALREADY` | Errore aggiunta tag (whitelist piena / auth fallita / già presente) |
+| `TAG-DEL-OK` / `TAG-DEL-FAIL NOT-FOUND` | Conferma rimozione tag |
 | `STATE FAN:75 TABLET:ON` | Risposta a `GET-STATE` — stato corrente ventola e tablet |
 | `PONG` | Risposta al PING |
 | `ACK UNLOCK-DOOR` | Conferma esecuzione apertura portone |
 | `ACK TABLET-ON` / `ACK TABLET-OFF` | Conferma cambio stato tablet |
 | `ACK FAN-XX` | Conferma impostazione ventola |
+
+**Come funziona l'aggiunta di un tag NFC (flusso auto-detect):**
+
+Il pannello web chiede solo il nome del titolare. L'ESP32 identifica autonomamente il tipo di tag:
+- **Tag normale (MIFARE/NTAG)** → aggiunto direttamente alla whitelist in un solo tap
+- **DESFire già configurato** → aggiunto direttamente in un solo tap
+- **DESFire nuovo** → inizializzato con la nostra chiave AES, poi aggiunto con un secondo tap
 
 **Sincronizzazione stato al boot:**  
 All'avvio della connessione USB il Pi invia automaticamente `GET-STATE`. L'ESP32 risponde con `STATE FAN:XX TABLET:ON/OFF` letto dalla NVS, così slider ventola e toggle tablet nel pannello web riflettono sempre il valore reale dell'hardware anche dopo un riavvio del Pi.
@@ -86,6 +106,7 @@ All'avvio della connessione USB il Pi invia automaticamente `GET-STATE`. L'ESP32
 11. [Comandi utili](#11-comandi-utili)
 12. [Aggiornamento e rebuild](#12-aggiornamento-e-rebuild)
 13. [Problemi comuni](#13-problemi-comuni)
+14. [Pannello Web — NFC Whitelist](#14-pannello-web--nfc-whitelist)
 
 ---
 
@@ -810,6 +831,242 @@ sudo cp ~/backup.env /home/doorphoneserver/.env
 sudo chown doorphoneserver:doorphoneserver /home/doorphoneserver/.env
 sudo chmod 600 /home/doorphoneserver/.env
 ```
+
+---
+
+## 14. Pannello Web — NFC Whitelist
+
+La pagina **NFC Whitelist** del pannello web (tab "NFC Whitelist") permette di gestire i badge autorizzati ad aprire la porta. Richiede la scheda ESP32-S3 collegata via USB.
+
+---
+
+### Struttura della pagina
+
+La pagina è divisa in due aree:
+
+**Tabella tag autorizzati** — elenco di tutti i badge registrati, con colonne:
+
+| Colonna | Contenuto |
+|---|---|
+| **UID** | Identificativo unico del tag (14 cifre hex, es. `1C7D223E000000`) |
+| **Nominativo** | Nome del titolare assegnato in fase di registrazione |
+| **Tipo** | `PLAIN` (MIFARE Classic, NTAG) oppure `DESFIRE` (DESFire EV1/EV2/EV3) |
+| **Aggiunto il** | Data e ora di registrazione |
+| **Ultimo accesso** | Data e ora dell'ultimo passaggio autorizzato (`—` se mai usato) |
+| **Accessi** | Contatore totale degli accessi autorizzati |
+| **Azioni** | Pulsanti Modifica e Rimuovi |
+
+**Log USB seriale** — finestra in tempo reale con tutti i messaggi scambiati tra Raspberry Pi e ESP32. Utile per diagnostica. Supporta auto-refresh e pulsante Clear.
+
+---
+
+### Aggiungere un tag
+
+Clicca **Aggiungi Tag**. Si apre un modale che guida l'utente attraverso il processo. Il modale ha **6 stati possibili** descritti di seguito.
+
+---
+
+#### Stato 1 — Inserimento nome (`nfcStepMode`)
+
+Il modale mostra un campo di testo per inserire il nominativo del titolare (massimo 64 caratteri, es. "Mario Rossi"). Il tipo di tag **non va selezionato** dall'utente: l'ESP32 lo rileva autonomamente.
+
+Clicca **Avvia procedura** per procedere. Il pulsante è disabilitato se il campo nome è vuoto.
+
+Cosa succede internamente:
+- Il Pi invia `POST /api/whitelist/enroll` con `{ "name": "...", "mode": "auto" }`
+- Il server Go invia all'ESP32 il comando `TAG-SCAN\n` via USB seriale
+- L'ESP32 risponde `ACK TAG-SCAN PENDING\n` confermando che è in ascolto
+- Il Pi apre uno stream SSE (`/api/whitelist/enroll/events`) per ricevere gli aggiornamenti in tempo reale
+
+---
+
+#### Stato 2 — Attesa tag (`nfcStepListen`)
+
+Il modale mostra un conto alla rovescia circolare di **30 secondi** con il messaggio "Avvicina il tag al lettore…".
+
+L'utente avvicina il badge al lettore NFC collegato all'ESP32.
+
+Il timeout è gestito lato server: se entro 35 secondi nessun tag viene letto, il server invia un evento SSE `{ "event": "error", "code": "timeout" }` e il modale passa allo **Stato 5 (timeout)**.
+
+---
+
+#### Stato 3 — Tag rilevato (`nfcStepDetected`)
+
+Appena l'ESP32 legge il tag e ne identifica il tipo, invia via USB la riga `TAG-INFO <uid> <tipo>`. Il server Pi la riceve e la traduce nell'evento SSE `{ "event": "tag-detected", "uid": "...", "tag_type": "..." }`.
+
+Il modale sostituisce il conto alla rovescia con un riquadro informativo che mostra:
+
+| Campo | Contenuto |
+|---|---|
+| **Icona** | Scudo (DESFire) o antenna Wi-Fi (tag normale) |
+| **Tipo identificato** | "Tag Normale (MIFARE / NTAG)", "DESFire (già configurato)", oppure "DESFire (nuovo)" |
+| **Nota** | Breve descrizione di cosa avverrà automaticamente |
+| **UID** | L'identificativo del tag in formato esadecimale maiuscolo a 14 caratteri |
+
+Da questo punto il flusso si divide in tre percorsi a seconda del tipo rilevato.
+
+---
+
+#### Percorso A — Tag Normale o DESFire già configurato (1 solo tap)
+
+Questi due tipi vengono registrati direttamente senza ulteriori interazioni.
+
+**Flusso messaggi completo:**
+```
+Pi     → ESP32   TAG-SCAN
+ESP32  → Pi      ACK TAG-SCAN PENDING
+                 [utente avvicina il tag]
+ESP32  → Pi      TAG-INFO <uid> PLAIN          (o DESFIRE-CONFIGURED)
+ESP32  → Pi      TAG-ENROLLED <uid> PLAIN      (o DESFIRE)
+```
+
+Quando arriva l'evento SSE `enrolled`:
+- Il titolo del modale cambia in **"Tag registrato!"**
+- Dopo 1,4 secondi il modale si chiude automaticamente
+- Appare un toast verde con il nome del titolare appena registrato
+- La tabella si aggiorna
+
+---
+
+#### Percorso B — DESFire nuovo (2 tap, con inizializzazione)
+
+Un tag DESFire vergine deve essere prima inizializzato con la chiave AES del sistema prima di poter essere usato per l'autenticazione.
+
+**Flusso messaggi completo:**
+```
+Pi     → ESP32   TAG-SCAN
+ESP32  → Pi      ACK TAG-SCAN PENDING
+                 [utente avvicina il tag — PRIMO TAP]
+ESP32  → Pi      TAG-INFO <uid> DESFIRE-NEW
+                 [ESP32 esegue l'inizializzazione AES internamente]
+ESP32  → Pi      TAG-FORMAT-OK <uid>
+Pi     → ESP32   TAG-ENROLL                    ← inviato automaticamente dal server Go
+                 [utente toglie il tag dal lettore]
+```
+
+Quando arriva l'evento SSE `format-ok`, il modale passa allo **Stato 4** (formato OK).
+
+```
+                 [utente riavvicina il tag — SECONDO TAP]
+ESP32  → Pi      TAG-ENROLLED <uid> DESFIRE
+```
+
+Quando arriva l'evento SSE `enrolled`, il modale si chiude come nel Percorso A.
+
+> Il comando `TAG-ENROLL` dopo `TAG-FORMAT-OK` è inviato automaticamente dal server Go (funzione `parseTagFormatOK` in `usb_bridge.go`) — l'utente non deve fare nulla tranne togliere e riavvicinare il badge.
+
+---
+
+#### Stato 4 — DESFire inizializzato, attesa secondo tap (`nfcStepFormatOK`)
+
+Visibile solo nel Percorso B. Il modale mostra:
+- Un riquadro con la scritta **"Tag inizializzato"** e l'UID del tag
+- Il messaggio "Inizializzazione OK. Rimuovi e riavvicina il tag."
+- Un nuovo conto alla rovescia di 30 secondi
+
+L'utente toglie il tag dal lettore e lo riavvicina per completare la registrazione.
+
+---
+
+#### Stato 5 — Errore (`nfcStepError`)
+
+Il modale mostra un'icona di errore triangolare e un messaggio descrittivo. Possibili cause:
+
+| Codice errore | Messaggio mostrato | Causa |
+|---|---|---|
+| `timeout` | — (vedi Stato 6) | Nessun tag letto entro 35 secondi |
+| `already-enrolled` | "Tag già registrato nella NVS" | Il tag è già presente nella whitelist ESP32 |
+| `whitelist-full` | "Whitelist piena (max 10 tag)" | La NVS dell'ESP32 ha raggiunto il limite di 10 tag |
+| `auth-fail` | "Autenticazione fallita — chiave errata" | Il DESFire ha una chiave AES diversa dalla nostra |
+| `format-fail` | "Inizializzazione tag fallita" | Errore generico durante il formato DESFire |
+| `not-desfire` | "Il tag non è DESFire" | Il firmware ha ricevuto un tag non DESFire in modalità format |
+| `enroll-fail` | "Enrollment fallito" | Errore generico durante la registrazione |
+| `cancelled` | "Enrollment annullato" | L'utente ha cliccato Annulla |
+
+In questo stato il pulsante **Riprova** è visibile. Cliccarlo annulla l'operazione corrente sul server (`DELETE /api/whitelist/enroll/cancel`) e riporta il modale allo Stato 1 con il campo nome vuoto.
+
+---
+
+#### Stato 6 — Timeout (`nfcStepTimeout`)
+
+Il modale mostra un'icona di orologio con il messaggio "Timeout: nessun tag rilevato." Il pulsante **Riprova** è visibile con lo stesso comportamento dello Stato 5.
+
+---
+
+#### Annullare l'operazione in qualsiasi momento
+
+Il pulsante **Annulla** è sempre visibile durante il processo. Cliccarlo:
+1. Chiude lo stream SSE
+2. Invia `DELETE /api/whitelist/enroll/cancel` al server
+3. Il server annulla la sessione di enrollment e riporta l'ESP32 in modalità normale
+4. Chiude il modale
+
+---
+
+#### Riepilogo flussi per tipo di tag
+
+| Tipo tag | Tap richiesti | Step UI attraversati |
+|---|---|---|
+| Tag Normale (MIFARE/NTAG) | 1 | Nome → Attesa → Rilevato → Chiusura automatica |
+| DESFire già configurato | 1 | Nome → Attesa → Rilevato → Chiusura automatica |
+| DESFire nuovo / vergine | 2 | Nome → Attesa → Rilevato → Formato OK → Attesa 2° tap → Chiusura automatica |
+| Qualsiasi tipo (errore) | — | Nome → Attesa → Errore → (Riprova o Annulla) |
+| Qualsiasi tipo (timeout) | — | Nome → Attesa → Timeout → (Riprova o Annulla) |
+
+---
+
+### Modificare un tag
+
+Clicca **Modifica** sulla riga del tag. Si apre un modale con il campo nome pre-compilato. Modifica il nominativo e clicca **Salva**. Solo il nome è modificabile — l'UID e il tipo sono immutabili.
+
+---
+
+### Rimuovere un tag
+
+Clicca **Rimuovi** sulla riga del tag. Un modale di conferma mostra UID e nome del tag. Clicca **Rimuovi** per confermare.
+
+La rimozione avviene in parallelo sia sulla whitelist JSON del Pi che sulla NVS dell'ESP32 (tramite comando `TAG-DEL`).
+
+---
+
+### Sincronizzare con ESP32 — pulsante Sync ESP32
+
+La whitelist è mantenuta in due posti: il file JSON sul Pi (`preferences/nfc_whitelist.json`) e la NVS flash dell'ESP32. Normalmente sono sempre allineati perché ogni aggiunta e rimozione viene propagata in tempo reale. Il pulsante **Sync ESP32** permette di verificare manualmente l'allineamento.
+
+Cliccando **Sync ESP32** si apre un modale con:
+
+#### Caso: in sync
+- Contatori ESP32 e JSON mostrati affiancati, collegati da **↔** verde
+- Messaggio: *"I tag su ESP32 e nel JSON corrispondono esattamente."*
+
+#### Caso: differenze rilevate
+- Contatori affiancati, collegati da **≠** arancione
+- Messaggio che indica quanti tag sono fuori allineamento
+- Sezione **"Solo su ESP32 (non nel JSON)"** — lista degli UID presenti sulla NVS dell'ESP32 ma mancanti dal JSON locale
+- Sezione **"Solo nel JSON (non su ESP32)"** — lista degli UID presenti nel JSON ma non caricati sulla NVS dell'ESP32
+
+> **Quando può capitare una differenza:**
+> - Il Pi è stato reinstallato perdendo il file JSON, ma l'ESP32 conserva ancora i tag in NVS
+> - L'ESP32 è stato re-flashato, azzerando la NVS, ma il JSON era già aggiornato
+> - Un'operazione è fallita a metà (es. cavo USB staccato durante un'aggiunta)
+
+Per riallineare manualmente: usa **Rimuovi tutti** per azzerare entrambi e poi ri-registra i tag, oppure usa il pulsante **TAG-CLEAR** da terminale se vuoi azzerare solo l'ESP32.
+
+---
+
+### Rimuovere tutti i tag — pulsante Rimuovi tutti
+
+Cancella in un colpo solo tutti i tag sia dal JSON che dalla NVS dell'ESP32 (comando `TAG-CLEAR`). Chiede conferma prima di procedere. Utile durante il provisioning iniziale o per un reset completo.
+
+---
+
+### Persistenza dei dati
+
+| Dove | File / Storage | Note |
+|---|---|---|
+| Raspberry Pi | `preferences/nfc_whitelist.json` | File JSON, aggiornato ad ogni operazione |
+| ESP32-S3 | NVS flash (namespace `nfc_wl`) | Sopravvive ai riavvii, max 10 tag |
+| Sincronizzazione | Automatica ad ogni aggiunta/rimozione | Manuale con il pulsante Sync |
 
 ---
 

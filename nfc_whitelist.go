@@ -45,6 +45,7 @@ type SSEEvent struct {
 	UID        string `json:"uid,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Type       string `json:"type,omitempty"`
+	TagType    string `json:"tag_type,omitempty"` // per tag-detected: PLAIN, DESFIRE-CONFIGURED, DESFIRE-NEW
 	Step       int    `json:"step,omitempty"`
 	TotalSteps int    `json:"total_steps,omitempty"`
 	TimeoutSec int    `json:"timeout_sec,omitempty"`
@@ -112,7 +113,7 @@ func (m *NFCWhitelistManager) StartEnrollSession(name, mode string) (*EnrollSess
 	if err := m.validateName(name); err != nil {
 		return nil, fmt.Errorf("nome non valido: %v", err)
 	}
-	if mode != "plain" && mode != "desfire-new" && mode != "desfire-existing" {
+	if mode != "plain" && mode != "desfire-new" && mode != "desfire-existing" && mode != "auto" {
 		return nil, fmt.Errorf("mode non valido: %s", mode)
 	}
 
@@ -210,6 +211,31 @@ func (m *NFCWhitelistManager) HandleNFCEvent(uid string) {
 		if err := m.save(); err != nil {
 			log.Printf("[NFC] errore aggiornamento last_access: %v", err)
 		}
+	}
+}
+
+// HandleTagInfo gestisce "TAG-INFO <uid> <type>" — inviato dall'ESP32 appena rileva il tag.
+// Manda un SSE tag-detected al client con UID e tipo identificato.
+func (m *NFCWhitelistManager) HandleTagInfo(uid, rawType string) {
+	uid = strings.ToUpper(uid)
+	rawType = strings.ToUpper(rawType)
+
+	m.enrollMu.Lock()
+	session := m.enrollSession
+	m.enrollMu.Unlock()
+
+	if session == nil {
+		log.Printf("[NFC] TAG-INFO ricevuto senza enrollment attivo: uid=%s tipo=%s", uid, rawType)
+		return
+	}
+
+	log.Printf("[NFC] tag rilevato: uid=%s tipo=%s", uid, rawType)
+	select {
+	case session.SSEChan <- SSEEvent{
+		Event: "tag-detected", UID: uid, TagType: rawType,
+	}:
+	default:
+		log.Printf("[NFC] warn: SSEChan pieno, tag-detected non inviato")
 	}
 }
 
@@ -570,10 +596,14 @@ func (b *DoorPhoneServer) handleWhitelistEnrollStart(w http.ResponseWriter, r *h
 
 	// Invia comando all'ESP32 e attendi ACK (timeout 3s)
 	var cmd, ackKey string
-	if session.Mode == "desfire-new" {
+	switch session.Mode {
+	case "auto":
+		cmd = "TAG-SCAN\n"
+		ackKey = "ACK-SCAN"
+	case "desfire-new":
 		cmd = "TAG-FORMAT\n"
 		ackKey = "ACK-FORMAT"
-	} else {
+	default:
 		cmd = "TAG-ENROLL\n"
 		ackKey = "ACK-ENROLL"
 	}
@@ -610,12 +640,13 @@ func (b *DoorPhoneServer) handleWhitelistEnrollEvents(w http.ResponseWriter, r *
 	flusher, _ := w.(http.Flusher)
 
 	// Evento iniziale in base alla modalità
-	if session.Mode == "desfire-new" {
+	switch session.Mode {
+	case "desfire-new":
 		b.sseWrite(w, flusher, SSEEvent{
 			Event: "waiting-format", Step: 1, TotalSteps: 2,
 			TimeoutSec: 30, Msg: "Avvicina il tag DESFire per inizializzarlo",
 		})
-	} else {
+	default: // "auto", "plain", "desfire-existing"
 		b.sseWrite(w, flusher, SSEEvent{
 			Event: "waiting", Step: 1, TotalSteps: 1,
 			TimeoutSec: 30, Msg: "Avvicina il tag al lettore",
