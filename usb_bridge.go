@@ -479,6 +479,9 @@ func (b *USBBridge) dispatch(line string) {
 	case strings.HasPrefix(line, "EVT "):
 		b.parseAndSendGPIO(line)
 
+	case strings.HasPrefix(line, "ACK TAG-SCAN PENDING"):
+		b.signalPending("ACK-SCAN", "OK")
+
 	case strings.HasPrefix(line, "ACK TAG-ENROLL PENDING"):
 		b.signalPending("ACK-ENROLL", "OK")
 
@@ -487,6 +490,9 @@ func (b *USBBridge) dispatch(line string) {
 
 	case strings.HasPrefix(line, "ACK TAG-CLEAR"):
 		b.signalPending("ACK-CLEAR", "OK")
+
+	case strings.HasPrefix(line, "TAG-INFO "):
+		b.parseTagInfo(line)
 
 	case strings.HasPrefix(line, "TAG-ENROLLED "):
 		b.parseTagEnrolled(line)
@@ -594,6 +600,23 @@ func (b *USBBridge) parseTagEnrolled(line string) {
 	log.Printf("[USB] tag enrolled: uid=%s tipo=%s", uid, tagType)
 	if b.nfcMgr != nil {
 		b.nfcMgr.HandleTagEnrolled(uid, tagType)
+	}
+}
+
+// parseTagInfo processa "TAG-INFO <uid> <PLAIN|DESFIRE-CONFIGURED|DESFIRE-NEW>"
+// inviato dall'ESP32 in modalità auto-scan appena il tag viene identificato.
+func (b *USBBridge) parseTagInfo(line string) {
+	parts := strings.Fields(line)
+	if len(parts) < 3 {
+		log.Printf("[USB] TAG-INFO malformato (attesi 3 campi): %q", line)
+		return
+	}
+	uid := normalizeUID(parts[1])
+	tagType := strings.ToUpper(parts[2])
+
+	log.Printf("[USB] tag info: uid=%s tipo=%s", uid, tagType)
+	if b.nfcMgr != nil {
+		b.nfcMgr.HandleTagInfo(uid, tagType)
 	}
 }
 

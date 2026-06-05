@@ -676,23 +676,12 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   </div>
   <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
 
-    <!-- Step 1: scelta modalità + nome -->
+    <!-- Step 1: nome -->
     <div id="nfcStepMode">
       <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:6px">Nominativo (max 64 caratteri):</label>
       <input type="text" id="nfcNameInput" placeholder="Es. Mario Rossi" maxlength="64" autocomplete="off"
-        style="background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;margin-bottom:14px">
-      <label style="font-size:13px;color:var(--dim);display:block;margin-bottom:8px">Tipo di tag:</label>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
-          <input type="radio" name="nfcMode" value="plain"> <div><div style="font-weight:700">Tag Normale</div><div style="font-size:12px;color:var(--dim)">MIFARE Classic, NTAG</div></div>
-        </label>
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
-          <input type="radio" name="nfcMode" value="desfire-existing"> <div><div style="font-weight:700">DESFire (già configurato)</div><div style="font-size:12px;color:var(--dim)">Ha già la nostra chiave</div></div>
-        </label>
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:6px">
-          <input type="radio" name="nfcMode" value="desfire-new" checked> <div><div style="font-weight:700">DESFire (nuovo da inizializzare)</div><div style="font-size:12px;color:var(--dim)">Va inizializzato prima</div></div>
-        </label>
-      </div>
+        style="background:#0a0f1a;border:1px solid var(--border);color:#e2e8f0;border-radius:6px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;margin-bottom:6px">
+      <div style="font-size:12px;color:var(--dim)">Il tipo di tag verrà rilevato automaticamente dal lettore.</div>
     </div>
 
     <!-- Step 2: countdown attesa tag -->
@@ -712,7 +701,22 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
       </div>
     </div>
 
-    <!-- Step 3: tag formato OK (DESFire fase 1) -->
+    <!-- Step 3: tag rilevato — mostra tipo identificato dall'ESP32 -->
+    <div id="nfcStepDetected" style="display:none">
+      <div style="background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:14px 18px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <i id="nfcDetectedIcon" class="bi bi-wifi" style="font-size:22px;color:var(--accent)"></i>
+          <div>
+            <div id="nfcDetectedType" style="font-weight:700;font-size:14px"></div>
+            <div id="nfcDetectedNote" style="font-size:12px;color:var(--dim)"></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">UID</div>
+        <div id="nfcDetectedUID" style="font-family:monospace;font-size:15px;color:var(--accent);font-weight:700;letter-spacing:.05em">—</div>
+      </div>
+    </div>
+
+    <!-- Step 4: tag formato OK (DESFire fase 2) -->
     <div id="nfcStepFormatOK" style="display:none">
       <div style="background:#0a0f1a;border:1px solid var(--accent);border-radius:8px;padding:14px 18px;text-align:center">
         <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Tag inizializzato</div>
@@ -721,13 +725,13 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
       <div id="nfcFormatMsg" style="text-align:center;font-size:13px;color:var(--dim);margin-top:8px"></div>
     </div>
 
-    <!-- Step 4: errore -->
+    <!-- Step 5: errore -->
     <div id="nfcStepError" style="display:none;text-align:center">
       <i class="bi bi-exclamation-triangle" style="font-size:36px;color:#ef4444;opacity:.7;display:block;margin-bottom:10px"></i>
       <div id="nfcErrorMsg" style="color:var(--dim)"></div>
     </div>
 
-    <!-- Step 5: timeout -->
+    <!-- Step 6: timeout -->
     <div id="nfcStepTimeout" style="display:none;text-align:center;color:var(--dim)">
       <i class="bi bi-clock-history" style="font-size:36px;opacity:.4;display:block;margin-bottom:10px"></i>
       Timeout: nessun tag rilevato.
@@ -757,6 +761,48 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   <div class="modal-footer">
     <button class="modal-btn cancel" onclick="document.getElementById('nfcEditModal').classList.remove('show')">Annulla</button>
     <button class="modal-btn primary" onclick="nfcConfirmEdit()">Salva</button>
+  </div>
+</div>
+</div>
+
+<!-- Modal Sync Detail -->
+<div class="modal-overlay" id="nfcSyncModal">
+<div class="modal-box" style="width:480px;max-width:96vw">
+  <div class="modal-header">
+    <div class="modal-icon" id="nfcSyncModalIcon" style="font-size:20px">—</div>
+    <div class="modal-title" id="nfcSyncModalTitle">Sync ESP32</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+    <!-- Riepilogo conteggi -->
+    <div style="display:flex;gap:12px">
+      <div style="flex:1;background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">ESP32</div>
+        <div id="nfcSyncEsp32Count" style="font-size:28px;font-weight:700;color:var(--accent)">—</div>
+        <div style="font-size:11px;color:var(--dim)">tag in NVS</div>
+      </div>
+      <div style="display:flex;align-items:center;font-size:22px;color:var(--dim);padding:0 4px" id="nfcSyncArrow">↔</div>
+      <div style="flex:1;background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">JSON</div>
+        <div id="nfcSyncJsonCount" style="font-size:28px;font-weight:700;color:var(--accent)">—</div>
+        <div style="font-size:11px;color:var(--dim)">tag nel file</div>
+      </div>
+    </div>
+    <!-- Stato corrispondenza -->
+    <div id="nfcSyncStatus" style="text-align:center;padding:10px;border-radius:8px;font-weight:600;font-size:14px"></div>
+    <!-- Dettaglio differenze (visibile solo se non in sync) -->
+    <div id="nfcSyncDiff" style="display:none;flex-direction:column;gap:10px">
+      <div id="nfcSyncEsp32Only" style="display:none">
+        <div style="font-size:12px;color:#f97316;font-weight:600;margin-bottom:6px"><i class="bi bi-exclamation-circle"></i> Solo su ESP32 (non nel JSON):</div>
+        <div id="nfcSyncEsp32OnlyList" style="font-family:monospace;font-size:12px;background:#0a0f1a;border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:3px"></div>
+      </div>
+      <div id="nfcSyncJsonOnly" style="display:none">
+        <div style="font-size:12px;color:#f97316;font-weight:600;margin-bottom:6px"><i class="bi bi-exclamation-circle"></i> Solo nel JSON (non su ESP32):</div>
+        <div id="nfcSyncJsonOnlyList" style="font-family:monospace;font-size:12px;background:#0a0f1a;border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:3px"></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="document.getElementById('nfcSyncModal').classList.remove('show')">Chiudi</button>
   </div>
 </div>
 </div>
@@ -886,12 +932,8 @@ function nfcRender(){
 // ── Enrollment (SSE-driven) ───────────────────────────────────────────────────
 
 function nfcStartAdd(){
-  // Reset UI
+  nfcAllStepsHide();
   document.getElementById('nfcStepMode').style.display='';
-  document.getElementById('nfcStepListen').style.display='none';
-  document.getElementById('nfcStepFormatOK').style.display='none';
-  document.getElementById('nfcStepError').style.display='none';
-  document.getElementById('nfcStepTimeout').style.display='none';
   document.getElementById('nfcStartBtn').style.display='';
   document.getElementById('nfcRetryBtn').style.display='none';
   document.getElementById('nfcNameInput').value='';
@@ -905,20 +947,19 @@ async function nfcDoStart(){
   const name=document.getElementById('nfcNameInput').value.trim();
   if(!name){toastCenter('Inserisci un nominativo','err');return;}
   if(name.length>64){toastCenter('Nome max 64 caratteri','err');return;}
-  const mode=document.querySelector('input[name="nfcMode"]:checked')?.value||'desfire-new';
 
   document.getElementById('nfcStepMode').style.display='none';
   document.getElementById('nfcStepListen').style.display='';
   document.getElementById('nfcStartBtn').style.display='none';
-  document.getElementById('nfcWaitMsg').textContent=mode==='desfire-new'?'Avvicina il tag DESFire per inizializzarlo':'Avvicina il tag al lettore…';
-  document.getElementById('nfcPhaseLabel').textContent=mode==='desfire-new'?'Fase 1 di 2':'';
+  document.getElementById('nfcWaitMsg').textContent='Avvicina il tag al lettore…';
+  document.getElementById('nfcPhaseLabel').textContent='';
 
   nfcCdSec=30; nfcUpdateCd();
   clearInterval(nfcCdTimer);
   nfcCdTimer=setInterval(()=>{nfcCdSec--;nfcUpdateCd();if(nfcCdSec<=0)clearInterval(nfcCdTimer);},1000);
 
   try{
-    const r=await fetch('/api/whitelist/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mode})});
+    const r=await fetch('/api/whitelist/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mode:'auto'})});
     if(!r.ok){const d=await r.json().catch(()=>({}));nfcShowError(d.error||r.statusText);return;}
   }catch(e){nfcShowError('Errore di rete: '+e);return;}
 
@@ -937,13 +978,46 @@ function nfcListenSSE(){
   };
 }
 
+function nfcTagLabel(t){
+  if(!t)return'Tag rilevato';
+  if(t==='PLAIN')return'Tag Normale (MIFARE / NTAG)';
+  if(t==='DESFIRE-CONFIGURED')return'DESFire (già configurato)';
+  if(t==='DESFIRE-NEW')return'DESFire (nuovo)';
+  return t;
+}
+function nfcTagNote(t){
+  if(t==='PLAIN')return'Verrà aggiunto direttamente alla whitelist';
+  if(t==='DESFIRE-CONFIGURED')return'Già inizializzato con la nostra chiave — aggiunta diretta';
+  if(t==='DESFIRE-NEW')return'Inizializzazione in corso — rimuovi e riavvicina il tag';
+  return'';
+}
+function nfcTagIcon(t){
+  if(t==='DESFIRE-CONFIGURED'||t==='DESFIRE-NEW')return'bi-shield-lock';
+  return'bi-wifi';
+}
+
+function nfcAllStepsHide(){
+  ['nfcStepMode','nfcStepListen','nfcStepDetected','nfcStepFormatOK','nfcStepError','nfcStepTimeout']
+    .forEach(id=>document.getElementById(id).style.display='none');
+}
+
 function nfcHandleSSE(d){
   switch(d.event){
     case 'waiting':
     case 'waiting-format':
       document.getElementById('nfcWaitMsg').textContent=d.msg||'Avvicina il tag al lettore…';
       break;
+    case 'tag-detected':
+      clearInterval(nfcCdTimer);
+      document.getElementById('nfcStepListen').style.display='none';
+      document.getElementById('nfcStepDetected').style.display='';
+      document.getElementById('nfcDetectedUID').textContent=d.uid||'—';
+      document.getElementById('nfcDetectedType').textContent=nfcTagLabel(d.tag_type);
+      document.getElementById('nfcDetectedNote').textContent=nfcTagNote(d.tag_type);
+      document.getElementById('nfcDetectedIcon').className='bi '+nfcTagIcon(d.tag_type);
+      break;
     case 'waiting-enroll':
+      document.getElementById('nfcStepDetected').style.display='none';
       document.getElementById('nfcStepFormatOK').style.display='none';
       document.getElementById('nfcStepListen').style.display='';
       document.getElementById('nfcWaitMsg').textContent=d.msg||'Riavvicina il tag al lettore';
@@ -955,6 +1029,7 @@ function nfcHandleSSE(d){
     case 'format-ok':
       clearInterval(nfcCdTimer);
       document.getElementById('nfcStepListen').style.display='none';
+      document.getElementById('nfcStepDetected').style.display='none';
       document.getElementById('nfcStepFormatOK').style.display='';
       document.getElementById('nfcFormatUID').textContent=d.uid||'—';
       document.getElementById('nfcFormatMsg').textContent=d.msg||'';
@@ -964,6 +1039,7 @@ function nfcHandleSSE(d){
       if(nfcEnrollSrc){nfcEnrollSrc.close();nfcEnrollSrc=null;}
       document.getElementById('nfcAddTitle').textContent='Tag registrato!';
       document.getElementById('nfcStepListen').style.display='none';
+      document.getElementById('nfcStepDetected').style.display='none';
       document.getElementById('nfcStepFormatOK').style.display='none';
       toastCenter('Tag '+(d.name||d.uid)+' aggiunto','ok');
       setTimeout(()=>{nfcCloseAdd();loadNfcWhitelist();},1400);
@@ -978,11 +1054,8 @@ function nfcHandleSSE(d){
 
 function nfcShowError(msg){
   clearInterval(nfcCdTimer);
-  document.getElementById('nfcStepListen').style.display='none';
-  document.getElementById('nfcStepFormatOK').style.display='none';
-  document.getElementById('nfcStepMode').style.display='none';
+  nfcAllStepsHide();
   document.getElementById('nfcStepError').style.display='';
-  document.getElementById('nfcStepTimeout').style.display='none';
   document.getElementById('nfcErrorMsg').textContent=msg;
   document.getElementById('nfcRetryBtn').style.display='';
   document.getElementById('nfcStartBtn').style.display='none';
@@ -990,10 +1063,7 @@ function nfcShowError(msg){
 
 function nfcShowTimeout(){
   clearInterval(nfcCdTimer);
-  document.getElementById('nfcStepListen').style.display='none';
-  document.getElementById('nfcStepFormatOK').style.display='none';
-  document.getElementById('nfcStepMode').style.display='none';
-  document.getElementById('nfcStepError').style.display='none';
+  nfcAllStepsHide();
   document.getElementById('nfcStepTimeout').style.display='';
   document.getElementById('nfcRetryBtn').style.display='';
   document.getElementById('nfcStartBtn').style.display='none';
@@ -1025,11 +1095,81 @@ async function nfcSync(){
     const r=await fetch('/api/whitelist/sync');
     if(!r.ok)throw new Error(r.statusText);
     const d=await r.json();
-    const msg=d.in_sync?'In sync ('+d.esp32_count+' tag ESP32, '+d.json_count+' JSON)'
-      :'DIFFERENZE: esp32-only='+JSON.stringify(d.esp32_only)+' json-only='+JSON.stringify(d.json_only);
-    toastCenter(msg, d.in_sync?'ok':'err');
     loadNfcWhitelist();
+    nfcShowSyncModal(d);
   }catch(e){toastCenter('Sync fallita: '+e,'err');}
+}
+
+function nfcShowSyncModal(d){
+  const esp32Only=d.esp32_only||[];
+  const jsonOnly=d.json_only||[];
+  const inSync=d.in_sync;
+
+  document.getElementById('nfcSyncEsp32Count').textContent=d.esp32_count??'—';
+  document.getElementById('nfcSyncJsonCount').textContent=d.json_count??'—';
+
+  // Freccia e colori contatori
+  const arrow=document.getElementById('nfcSyncArrow');
+  const accentColor=inSync?'#22c55e':'#f97316';
+  arrow.textContent=inSync?'↔':'≠';
+  arrow.style.color=accentColor;
+  document.getElementById('nfcSyncEsp32Count').style.color=accentColor;
+  document.getElementById('nfcSyncJsonCount').style.color=accentColor;
+
+  // Icona e titolo header
+  const icon=document.getElementById('nfcSyncModalIcon');
+  icon.textContent=inSync?'✓':'!';
+  icon.style.background=inSync?'rgba(34,197,94,.15)':'rgba(249,115,22,.15)';
+  icon.style.color=accentColor;
+  icon.style.borderRadius='50%';
+  icon.style.width='40px';
+  icon.style.height='40px';
+  icon.style.display='flex';
+  icon.style.alignItems='center';
+  icon.style.justifyContent='center';
+  icon.style.fontSize='20px';
+  document.getElementById('nfcSyncModalTitle').textContent=inSync?'In sync':'Differenze rilevate';
+
+  // Stato corrispondenza
+  const status=document.getElementById('nfcSyncStatus');
+  if(inSync){
+    status.textContent='I tag su ESP32 e nel JSON corrispondono esattamente.';
+    status.style.background='rgba(34,197,94,.08)';
+    status.style.border='1px solid rgba(34,197,94,.25)';
+    status.style.color='#22c55e';
+  } else {
+    const parts=[];
+    if(esp32Only.length) parts.push(esp32Only.length+' tag solo su ESP32');
+    if(jsonOnly.length)  parts.push(jsonOnly.length+' tag solo nel JSON');
+    status.textContent=parts.join(' · ')+' — i dati non corrispondono.';
+    status.style.background='rgba(249,115,22,.08)';
+    status.style.border='1px solid rgba(249,115,22,.25)';
+    status.style.color='#f97316';
+  }
+
+  // Dettaglio differenze
+  const diffEl=document.getElementById('nfcSyncDiff');
+  if(!inSync){
+    diffEl.style.cssText='display:flex;flex-direction:column;gap:10px';
+    // ESP32-only
+    const e32El=document.getElementById('nfcSyncEsp32Only');
+    if(esp32Only.length){
+      e32El.style.display='';
+      document.getElementById('nfcSyncEsp32OnlyList').innerHTML=
+        esp32Only.map(u=>'<span style="color:var(--accent)">'+nfcEsc(u)+'</span>').join('');
+    } else { e32El.style.display='none'; }
+    // JSON-only
+    const jsEl=document.getElementById('nfcSyncJsonOnly');
+    if(jsonOnly.length){
+      jsEl.style.display='';
+      document.getElementById('nfcSyncJsonOnlyList').innerHTML=
+        jsonOnly.map(u=>'<span style="color:var(--accent)">'+nfcEsc(u)+'</span>').join('');
+    } else { jsEl.style.display='none'; }
+  } else {
+    diffEl.style.display='none';
+  }
+
+  document.getElementById('nfcSyncModal').classList.add('show');
 }
 
 // ── Edit ─────────────────────────────────────────────────────────────────────
