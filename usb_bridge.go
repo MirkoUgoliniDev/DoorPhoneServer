@@ -3,8 +3,10 @@ package doorphoneserver
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +14,15 @@ import (
 
 	"go.bug.st/serial"
 )
+
+const floorsFile = "preferences/floors.json"
+
+// floorsJSON è il formato di serializzazione su disco e nelle API.
+type floorsJSON struct {
+	P1 [4]string `json:"p1"`
+	P2 [4]string `json:"p2"`
+	P3 [4]string `json:"p3"`
+}
 
 const (
 	usbSerialPath    = "/dev/esp32"
@@ -39,6 +50,7 @@ type esp32State struct {
 	ringFlash  map[string]time.Time
 	tabletOn   bool
 	fanPct     int
+	floors     [3][4]string // [piano 0-2][slot 0-3]
 }
 
 func newESP32State() *esp32State {
@@ -94,6 +106,52 @@ func (s *esp32State) getTablet() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tabletOn
+}
+
+// setFloorSlots imposta tutti e 4 gli slot di un piano in un colpo solo.
+func (s *esp32State) setFloorSlots(idx int, slots [4]string) {
+	if idx < 0 || idx > 2 {
+		return
+	}
+	s.mu.Lock()
+	s.floors[idx] = slots
+	floors := s.floors
+	s.mu.Unlock()
+	saveFloorsToDisk(floors)
+}
+
+func (s *esp32State) getFloors() [3][4]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.floors
+}
+
+func (s *esp32State) loadFloorsFromDisk() {
+	data, err := os.ReadFile(floorsFile)
+	if err != nil {
+		return
+	}
+	var fj floorsJSON
+	if err := json.Unmarshal(data, &fj); err != nil {
+		log.Printf("[USB] warn: floors.json malformato: %v", err)
+		return
+	}
+	s.mu.Lock()
+	s.floors[0], s.floors[1], s.floors[2] = fj.P1, fj.P2, fj.P3
+	s.mu.Unlock()
+	log.Printf("[USB] floors caricati da disco: p1=%v p2=%v p3=%v", fj.P1, fj.P2, fj.P3)
+}
+
+func saveFloorsToDisk(floors [3][4]string) {
+	fj := floorsJSON{P1: floors[0], P2: floors[1], P3: floors[2]}
+	data, err := json.MarshalIndent(fj, "", "  ")
+	if err != nil {
+		log.Printf("[USB] errore marshal floors: %v", err)
+		return
+	}
+	if err := os.WriteFile(floorsFile, data, 0644); err != nil {
+		log.Printf("[USB] errore salvataggio floors.json: %v", err)
+	}
 }
 
 func (s *esp32State) setFanPct(pct int) {
@@ -230,12 +288,14 @@ type USBBridge struct {
 
 // NewUSBBridge crea il bridge e avvia la connessione in background.
 func NewUSBBridge(ctx context.Context) *USBBridge {
+	state := newESP32State()
+	state.loadFloorsFromDisk()
 	b := &USBBridge{
 		gpioCh:     make(chan GPIOEvent, usbEvtBufSize),
 		cardCh:     make(chan CardEvent, usbEvtBufSize),
 		nfcCh:      make(chan NfcEvent, usbEvtBufSize),
 		sendCh:     make(chan string, usbSendBufSize),
-		State:      newESP32State(),
+		State:      state,
 		pendingMap: make(map[string]chan string),
 	}
 	b.GpioEvt = b.gpioCh
@@ -378,6 +438,7 @@ func (b *USBBridge) connectLoop(ctx context.Context) {
 		b.State.setConnected(true)
 		b.drainSendCh()
 		b.Send("GET-STATE\n")
+		b.Send("FLOOR-GET\n")
 		b.runSession(ctx, port)
 		b.State.setConnected(false)
 		b.State.resetPins()
@@ -540,6 +601,15 @@ func (b *USBBridge) dispatch(line string) {
 
 	case strings.HasPrefix(line, "TAG-LIST-END"):
 		b.handleTagListEnd()
+
+	case strings.HasPrefix(line, "FLOOR-P"):
+		b.parseFloor(line)
+
+	case strings.HasPrefix(line, "ACK FLOOR-SET "):
+		parts := strings.Fields(line)
+		if len(parts) == 3 {
+			b.signalPending("ACK-FLOOR-"+parts[2], "OK")
+		}
 
 	case strings.HasPrefix(line, "ACK "):
 		// conferma output GPIO eseguito
@@ -721,6 +791,31 @@ func (b *USBBridge) writeLoop(ctx context.Context, port serial.Port, closePort f
 			usbLogAppend("→ " + strings.TrimSpace(msg))
 		}
 	}
+}
+
+// parseFloor processa "FLOOR-P1 slot1|slot2|slot3|slot4" (pipe-separated, 4 slot).
+func (b *USBBridge) parseFloor(line string) {
+	sp := strings.SplitN(line, " ", 2)
+	var idx int
+	switch sp[0] {
+	case "FLOOR-P1":
+		idx = 0
+	case "FLOOR-P2":
+		idx = 1
+	case "FLOOR-P3":
+		idx = 2
+	default:
+		return
+	}
+	var slots [4]string
+	if len(sp) == 2 {
+		parts := strings.SplitN(strings.TrimSpace(sp[1]), "|", 4)
+		for i := 0; i < 4 && i < len(parts); i++ {
+			slots[i] = parts[i]
+		}
+	}
+	b.State.setFloorSlots(idx, slots)
+	log.Printf("[USB] floor aggiornato: P%d → %v", idx+1, slots)
 }
 
 func (b *USBBridge) pingLoop(ctx context.Context) {

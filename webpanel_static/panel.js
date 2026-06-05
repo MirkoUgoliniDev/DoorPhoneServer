@@ -2185,6 +2185,12 @@ function pollESP32(){
       lbl.style.color=d.connected?'#22c55e':'#ef4444';
       lbl.textContent=d.connected?'Connesso':'Disconnesso';
     }
+    // mostra i log card solo se connesso
+    const logDisplay=d.connected?'block':'none';
+    ['esp32LogCard','nfcLogCard'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el)el.style.display=logDisplay;
+    });
     // disabilita i controlli se non connesso
     const fan=document.getElementById('fanSlider');
     const fanBtn=document.querySelector('button[onclick="esp32FanSet()"]');
@@ -2219,6 +2225,14 @@ function pollESP32(){
         area.value=usbLines.slice().reverse().join('\n');
       }
     }
+    const floors=d.floors||{};
+    ['P1','P2','P3'].forEach(p=>{
+      const slots=floors[p.toLowerCase()]||[];
+      [1,2,3,4].forEach((s,si)=>{
+        const inp=document.getElementById('floor'+p+'-'+s);
+        if(inp&&document.activeElement!==inp)inp.value=slots[si]||'';
+      });
+    });
   }).catch(()=>{});
 }
 
@@ -2269,6 +2283,18 @@ function esp32ClearCardLog(){
       if(area)area.value='';
       toastCenter('Log USB svuotato',true);
     })
+    .catch(()=>toastCenter('Errore di rete',false));
+}
+
+function esp32FloorSet(floor){
+  const params=new URLSearchParams({floor});
+  [1,2,3,4].forEach(s=>{
+    const inp=document.getElementById('floor'+floor+'-'+s);
+    params.set('t'+s, inp?inp.value.slice(0,20):'');
+  });
+  fetch('/panel/api/esp32/floors',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})
+    .then(r=>r.json())
+    .then(d=>toastCenter(d.ok?'Piano '+floor+' aggiornato':(d.error||'Errore invio comando'),d.ok))
     .catch(()=>toastCenter('Errore di rete',false));
 }
 

@@ -38,6 +38,7 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 - Relè apertura porta/cancello (impulso 200ms)
 - Alimentazione tablet Android (on/off)
 - Ventola PWM 25kHz (raffreddamento quadro elettrico)
+- **Display occupanti** — testi configurabili per P1/P2/P3 (4 nominativi per piano), visualizzati su display OLED/LCD, persistiti su LittleFS
 
 **Protocollo Pi → ESP32 (comandi inviati via USB):**
 
@@ -48,6 +49,8 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 | `TABLET-OFF` | Alimentazione tablet OFF (GPIO17) |
 | `FAN-XX` | Ventola PWM al XX% (es. `FAN-75`) |
 | `GET-STATE` | Richiesta stato corrente (fan + tablet) |
+| `FLOOR-GET` | Richiesta testi occupanti correnti (P1/P2/P3, 4 slot per piano) |
+| `FLOOR-SET P1 s1\|s2\|s3\|s4` | Imposta i 4 nominativi del piano 1 (pipe-separated, max 20 char) |
 | `PING` | Watchdog keepalive (ogni 5s) |
 | `TAG-SCAN` | Aggiunta tag NFC in modalità auto-detect: l'ESP32 rileva il tipo da solo |
 | `TAG-DEL <uid>` | Rimuove un tag dalla whitelist NVS |
@@ -72,6 +75,8 @@ Invece di collegare relè, pulsanti e lettore RFID direttamente ai GPIO del Rasp
 | `TAG-ENROLL-FAIL FULL\|AUTH\|ALREADY` | Errore aggiunta tag (whitelist piena / auth fallita / già presente) |
 | `TAG-DEL-OK` / `TAG-DEL-FAIL NOT-FOUND` | Conferma rimozione tag |
 | `STATE FAN:75 TABLET:ON` | Risposta a `GET-STATE` — stato corrente ventola e tablet |
+| `FLOOR-P1 s1\|s2\|s3\|s4` | Risposta a `FLOOR-GET` — 4 slot del piano 1 (poi P2, P3) |
+| `ACK FLOOR-SET P1` | Conferma ricezione `FLOOR-SET` per il piano 1 (entro 3s) |
 | `PONG` | Risposta al PING |
 | `ACK UNLOCK-DOOR` | Conferma esecuzione apertura portone |
 | `ACK TABLET-ON` / `ACK TABLET-OFF` | Conferma cambio stato tablet |
@@ -85,7 +90,7 @@ Il pannello web chiede solo il nome del titolare. L'ESP32 identifica autonomamen
 - **DESFire nuovo** → inizializzato con la nostra chiave AES, poi aggiunto con un secondo tap
 
 **Sincronizzazione stato al boot:**  
-All'avvio della connessione USB il Pi invia automaticamente `GET-STATE`. L'ESP32 risponde con `STATE FAN:XX TABLET:ON/OFF` letto dalla NVS, così slider ventola e toggle tablet nel pannello web riflettono sempre il valore reale dell'hardware anche dopo un riavvio del Pi.
+All'avvio della connessione USB il Pi invia automaticamente `GET-STATE` e poi `FLOOR-GET`. L'ESP32 risponde con `STATE FAN:XX TABLET:ON/OFF` (da NVS) e con `FLOOR-P1/P2/P3 s1|s2|s3|s4` (da LittleFS), così slider ventola, toggle tablet e testi occupanti nel pannello web riflettono sempre il valore reale dell'hardware anche dopo un riavvio del Pi.
 
 > ⚠ **Repository in sviluppo** — la scheda e il firmware non sono ancora completati. Il protocollo lato server è sviluppato nel branch `GPIO-OVER-USB` di DoorPhoneServer, ma l'integrazione completa è ancora in corso. Non usare in produzione.
 
@@ -107,6 +112,7 @@ All'avvio della connessione USB il Pi invia automaticamente `GET-STATE`. L'ESP32
 12. [Aggiornamento e rebuild](#12-aggiornamento-e-rebuild)
 13. [Problemi comuni](#13-problemi-comuni)
 14. [Pannello Web — NFC Whitelist](#14-pannello-web--nfc-whitelist)
+15. [Pannello Web — Tab ESP32: Occupanti Piano](#15-pannello-web--tab-esp32-occupanti-piano)
 
 ---
 
@@ -692,7 +698,9 @@ sudo systemctl restart doorphoneserver
 ├── cert.pem / nopasskey.pem        ← componenti certificato
 ├── preferences/
 │   ├── alarms.json
-│   └── ai.json
+│   ├── ai.json
+│   ├── nfc_whitelist.json          ← whitelist NFC (Pi-side cache)
+│   └── floors.json                 ← occupanti piano P1/P2/P3 (4 slot/piano)
 ├── snapshots/                      ← foto dalla telecamera
 └── gocode/                         ← GOPATH (cache build, NON i sorgenti)
     └── pkg/                        ← pacchetti Go pre-compilati (cache)
@@ -1070,4 +1078,36 @@ Cancella in un colpo solo tutti i tag sia dal JSON che dalla NVS dell'ESP32 (com
 
 ---
 
-*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4 — branch GPIO-OVER-USB*
+---
+
+## 15. Pannello Web — Tab ESP32: Occupanti Piano
+
+Il tab **ESP32** del pannello web include una sezione **Occupanti Piano** che permette di impostare i nominativi visualizzati sul display fisico collegato all'ESP32.
+
+### Struttura
+
+- **3 colonne** — una per piano (P1, P2, P3)
+- **4 campi di testo** per piano — massimo 20 caratteri ciascuno
+- **Pulsante Invia** per piano — trasmette i 4 slot all'ESP32 in un unico comando
+
+### Comportamento
+
+| Evento | Cosa succede |
+|--------|-------------|
+| Apertura tab ESP32 | Il pannello interroga automaticamente `/api/esp32/status` che include i valori correnti dei 3 piani |
+| Connessione USB | Il Pi invia `FLOOR-GET`; l'ESP32 risponde con i valori salvati su LittleFS |
+| Click "Invia" (piano P1) | POST `/api/esp32/floors` con `floor=P1&t1=...&t2=...&t3=...&t4=...` → Pi invia `FLOOR-SET P1 s1|s2|s3|s4` → ESP32 salva su LittleFS e risponde `ACK FLOOR-SET P1` |
+| ESP32 disconnesso | La sezione log USB è nascosta; i campi occupanti restano editabili ma l'invio ritorna errore |
+
+### Persistenza
+
+| Dove | Formato | Note |
+|------|---------|------|
+| **Raspberry Pi** | `preferences/floors.json` — `{"p1":[...],"p2":[...],"p3":[...]}` | Cache locale, aggiornata ad ogni `FLOOR-SET` e ad ogni `FLOOR-GET` ricevuto |
+| **ESP32-S3** | `/floors.json` su LittleFS — stesso formato JSON | Sorgente di verità; sopravvive al riavvio del Pi |
+
+Per i dettagli del protocollo e l'implementazione firmware vedi [`Docs/esp32-floor-display.md`](Docs/esp32-floor-display.md).
+
+---
+
+*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4*

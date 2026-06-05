@@ -148,6 +148,7 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/panel/api/esp32/cardlog/clear", b.handleESP32CardLogClear)
 	mux.HandleFunc("/panel/api/esp32/usblog", b.handleESP32USBLog)
 	mux.HandleFunc("/panel/api/esp32/tablet", b.handleESP32Tablet)
+	mux.HandleFunc("/panel/api/esp32/floors", b.handleESP32Floors)
 	// NFC Whitelist — gestione via protocol coordinato con ESP32
 	mux.HandleFunc("/whitelist", b.handleWhitelistPage)
 	mux.HandleFunc("/api/whitelist", func(w http.ResponseWriter, r *http.Request) {
@@ -3939,6 +3940,7 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		RingFlash map[string]int64  `json:"ring_flash"`
 		TabletOn  bool              `json:"tablet_on"`
 		FanPct    int               `json:"fan_pct"`
+		Floors    floorsJSON        `json:"floors"`
 	}
 
 	resp := statusResp{
@@ -3953,6 +3955,8 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		resp.RingFlash = b.USBBridge.State.getRingFlash()
 		resp.TabletOn = b.USBBridge.State.getTablet()
 		resp.FanPct = b.USBBridge.State.getFanPct()
+		f := b.USBBridge.State.getFloors()
+		resp.Floors = floorsJSON{P1: f[0], P2: f[1], P3: f[2]}
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -4028,6 +4032,66 @@ func (b *DoorPhoneServer) handleESP32Tablet(w http.ResponseWriter, r *http.Reque
 		fmt.Fprintf(w, `{"ok":true,"tablet_on":false}`)
 	default:
 		http.Error(w, "state deve essere on o off", http.StatusBadRequest)
+	}
+}
+
+// handleESP32Floors gestisce i testi occupanti (4 slot per piano) per P1/P2/P3.
+// GET → {"floors":{"p1":[s1,s2,s3,s4],"p2":[...],"p3":[...]}}
+// POST floor=P1|P2|P3 + t1..t4 → invia FLOOR-SET P1 s1|s2|s3|s4 e attende ACK.
+func (b *DoorPhoneServer) handleESP32Floors(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == http.MethodGet {
+		var fj floorsJSON
+		if b.USBBridge != nil {
+			f := b.USBBridge.State.getFloors()
+			fj = floorsJSON{P1: f[0], P2: f[1], P3: f[2]}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"floors": fj})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+		return
+	}
+
+	floor := strings.ToUpper(strings.TrimSpace(r.FormValue("floor")))
+	idxMap := map[string]int{"P1": 0, "P2": 1, "P3": 2}
+	idx, ok := idxMap[floor]
+	if !ok {
+		http.Error(w, "floor deve essere P1, P2 o P3", http.StatusBadRequest)
+		return
+	}
+
+	clean := func(s string) string {
+		s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", "")
+		if len(s) > 20 {
+			s = s[:20]
+		}
+		return s
+	}
+	var slots [4]string
+	for i, key := range []string{"t1", "t2", "t3", "t4"} {
+		slots[i] = clean(r.FormValue(key))
+	}
+
+	// Protocollo: "FLOOR-SET P1 slot1|slot2|slot3|slot4"
+	payload := strings.Join(slots[:], "|")
+	_, ackOK := b.USBBridge.SendAndWait("FLOOR-SET "+floor+" "+payload+"\n", "ACK-FLOOR-"+floor, 3*time.Second)
+	b.USBBridge.State.setFloorSlots(idx, slots)
+
+	if ackOK {
+		log.Printf("[PANEL] FLOOR-SET %s → %v", floor, slots)
+		fmt.Fprintf(w, `{"ok":true}`)
+	} else {
+		log.Printf("[PANEL] FLOOR-SET %s timeout", floor)
+		fmt.Fprintf(w, `{"ok":false,"error":"timeout: ESP32 non ha risposto"}`)
 	}
 }
 
