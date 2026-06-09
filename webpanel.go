@@ -260,6 +260,9 @@ func loadAIConfig() AIConfig {
 }
 
 func saveAIConfig(cfg AIConfig) error {
+	if err := os.MkdirAll(filepath.Dir(aiConfigFilePath()), 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -281,6 +284,9 @@ func loadAlarms() AlarmConfig {
 }
 
 func saveAlarms(cfg AlarmConfig) error {
+	if err := os.MkdirAll(filepath.Dir(alarmFilePath()), 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -3169,6 +3175,13 @@ Sii conciso e diretto. Se il log è pulito, dillo chiaramente.`
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		fmt.Fprintf(w, `{"error":"API key OpenRouter non valida o scaduta. Aggiornala nel file .env"}`)
+		return
+	}
+
 	// Estrae il testo dalla risposta OpenRouter
 	var result struct {
 		Choices []struct {
@@ -3264,6 +3277,12 @@ func (b *DoorPhoneServer) handleOpenRouterModels(w http.ResponseWriter, r *http.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, `{"error":"read error"}`, http.StatusInternalServerError)
+		return
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		fmt.Fprintf(w, `{"error":"API key OpenRouter non valida o scaduta. Aggiornala nel file .env"}`)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

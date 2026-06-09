@@ -40,9 +40,9 @@ class StepEnvConfig(Step):
             self._set_status(Status.FAILED)
             return False
 
-        runner.run(["chmod", "640", str(env_path)], sudo=True)
+        runner.run(["chmod", "660", str(env_path)], sudo=True)
         runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(env_path)], sudo=True)
-        runner.log(f"  ✓ {env_path} scritto (640, owner {TK_USER})")
+        runner.log(f"  ✓ {env_path} scritto (660, owner {TK_USER})")
 
         self._set_status(Status.DONE)
         return True

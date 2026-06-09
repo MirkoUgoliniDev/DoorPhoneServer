@@ -37,6 +37,9 @@ class StepDataDir(Step):
             else:
                 runner.log(f"  [DRY-RUN] cp -n {src} → {dst}")
 
+        if not runner.dry_run:
+            runner.run(["chown", "-R", f"{TK_USER}:{TK_GROUP}", str(prefs)], sudo=True)
+
         # --- Certificato TLS per Mumble (in home/) ---
         runner.log("  Generazione certificato TLS...")
         cert_cmd = (
