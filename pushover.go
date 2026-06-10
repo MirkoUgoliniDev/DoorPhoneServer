@@ -268,7 +268,7 @@ func captureSnapshotViaFFmpeg(fileName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-rtsp_transport", "tcp", "-i", rtspURL, "-frames:v", "1", fileName)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-rtsp_transport", "tcp", "-i", rtspURL, "-frames:v", "1", "-update", "1", fileName)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		os.Remove(fileName)

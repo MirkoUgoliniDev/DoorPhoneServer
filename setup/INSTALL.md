@@ -194,7 +194,10 @@ python3 setup/wizard.py --dry-run --tui
 /home/doorphoneserver/
 ├── bin/doorphoneserver              ← binario compilato
 ├── doorphoneserver.xml              ← configurazione principale
+├── snapshots/                       ← snapshot telecamera (owner doorphoneserver, 775)
 └── gocode/src/github.com/MirkoUgoliniDev/doorphoneserver/
+
+/var/lib/doorphoneserver/data/       ← dati runtime (alarms.json, audio_calls_history.json)
 
 /etc/
 ├── asound.conf                  ← ALSA (generato dal wizard)
@@ -246,6 +249,28 @@ journalctl -u doorphoneserver -n 50
 ```
 
 Verifica che `/home/doorphoneserver/doorphoneserver.xml` sia presente e configurato con IP/credenziali del server Mumble corretti.
+
+### Snapshot falliscono con "Could not open file ... Input/output error"
+
+ffmpeg non riesce a scrivere nella directory snapshot perché non appartiene
+all'utente di servizio `doorphoneserver` o non ha permesso di scrittura.
+Ricrea la directory con i permessi corretti:
+
+```bash
+sudo bash setup/scripts/setup_data_dir.sh
+```
+
+In alternativa, manualmente:
+
+```bash
+sudo mkdir -p /home/doorphoneserver/snapshots
+sudo chown doorphoneserver:doorphoneserver /home/doorphoneserver/snapshots
+sudo chmod 775 /home/doorphoneserver/snapshots
+```
+
+> Nota: su ffmpeg 7.x la cattura di un singolo JPEG richiede il flag `-update 1`
+> (già incluso nel codice). Se aggiorni ffmpeg e gli snapshot smettono di
+> funzionare con "does not contain an image sequence pattern", il problema è quel flag.
 
 ---
 

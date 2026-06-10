@@ -21,6 +21,29 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// readDotEnvKey legge il valore di una singola chiave dal file .env al momento della chiamata,
+// senza usare os.Getenv, così i cambiamenti al file hanno effetto immediato senza riavvio.
+func readDotEnvKey(key string) string {
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(ConfigXMLFile), ".env"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.TrimSpace(parts[0]) == key {
+			return strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+		}
+	}
+	return ""
+}
+
 // loadDotEnv carica le variabili dal file .env nella stessa directory del file XML
 // e le imposta come variabili d'ambiente del processo. Valori già presenti non vengono sovrascritti.
 func loadDotEnv(dir string) {

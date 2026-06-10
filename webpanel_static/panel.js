@@ -82,15 +82,8 @@ function updateDashboard(){
     document.getElementById('svcUptime').textContent='Uptime: '+d.uptime;
     const svcBtn=document.getElementById('svcToggleBtn');
     if(svcBtn){
-      svcBtn.innerHTML=svcActive?'&#9632;':'&#9654;';
-      svcBtn.style.background=svcActive?'#e74c3c':'var(--green)';
-      svcBtn.style.color='#fff';
-      svcBtn.style.minWidth='40px';
-      svcBtn.style.width='40px';
-      svcBtn.style.height='40px';
-      svcBtn.style.padding='0';
-      svcBtn.style.fontSize='18px';
-      svcBtn.style.borderRadius='6px';
+      svcBtn.innerHTML=svcActive?'<i class="bi bi-stop-fill"></i> Ferma':'<i class="bi bi-play-fill"></i> Avvia';
+      svcBtn.className='btn-o btn-sm '+(svcActive?'btn-o-red':'btn-o-green');
       svcBtn.dataset.state=svcActive?'on':'off';
     }
     const connStr = d.connected ? ' — Connected' : ' — Disconnected';
@@ -314,7 +307,8 @@ function loadSounds(){
   fetch('/panel/api/sounds').then(r=>r.json()).then(files=>{
     const ul=document.getElementById('soundList');
     if(!files||files.length===0){ul.innerHTML='<li style="color:var(--dim)">No sound files found</li>';return;}
-    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">'+(f.name.endsWith('.mp3')?'\uD83C\uDFB5':'\uD83D\uDD0A')+'</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-primary btn-icon" title="Play in Browser" onclick="playSound(\''+f.name+'\')"><i class="bi bi-play-fill"></i></button><button class="btn btn-icon" style="background:#7c3aed;color:#fff" title="Play on Citofono" onclick="playSoundPi(\''+f.name+'\')"><i class="bi bi-bell-fill"></i></button><button class="btn btn-danger btn-icon" title="Delete" onclick="deleteSound(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
+    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">'+(f.name.endsWith('.mp3')?'\uD83C\uDFB5':'\uD83D\uDD0A')+'</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><button class="btn-icon btn-o btn-o-blue" title="Play in Browser" onclick="playSound(\''+f.name+'\')"><i class="bi bi-play-fill"></i></button><button class="btn-icon btn-o btn-o-purple js-pi-audio" title="Play on Citofono" onclick="playSoundPi(\''+f.name+'\')"><i class="bi bi-bell-fill"></i></button><button class="btn-icon btn-o btn-o-red" title="Delete" onclick="deleteSound(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
+    applyAudioCardState();
   }).catch(e=>toastCenter('Error: '+e,false));
 }
 
@@ -333,6 +327,7 @@ function stopAudio(){
 }
 
 function playSoundPi(name){
+  if(!_audioCardPresent){toastCenter('Nessuna scheda audio rilevata',false);return;}
   const cmd='/usr/bin/ffplay '+name+' -autoexit -nodisp -volume 100';
   const outEl=document.getElementById('sudoOutput');
   document.getElementById('sudoModalTitle').textContent='\u25B6 Play sul Citofono: '+name;
@@ -358,7 +353,14 @@ function playSoundPi(name){
     outEl.style.color='#ef4444';
   });
 }
+function applyAudioCardState(){
+  document.querySelectorAll('.js-pi-audio').forEach(b=>{
+    b.disabled=!_audioCardPresent;
+    b.title=_audioCardPresent?'Play on Citofono':'Nessuna scheda audio rilevata';
+  });
+}
 function stopPiAudio(){
+  if(!_audioCardPresent){toastCenter('Nessuna scheda audio rilevata',false);return;}
   fetch('/panel/api/sounds/stoppi',{method:'POST'})
   .then(()=>toastCenter('Stop audio citofono',true))
   .catch(e=>toastCenter('Errore: '+e,false));
@@ -368,6 +370,7 @@ function stopPiAudio(){
 function loadVolume(){
   fetch('/panel/api/volume').then(r=>r.json()).then(d=>{
     _audioCardPresent = !d.noCard;
+    applyAudioCardState();
     if(d.noCard){
       ['volOut','volIn'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
       toastCenter('Nessuna scheda audio rilevata',false);
@@ -533,10 +536,10 @@ function _updateRtspBtn(connected){
   if(!btn)return;
   if(connected){
     btn.textContent='Stop';
-    btn.className='btn btn-warn btn-sm';
+    btn.className='btn-o btn-o-orange btn-sm';
   } else {
     btn.textContent='Connetti';
-    btn.className='btn btn-primary btn-sm';
+    btn.className='btn-o btn-o-blue btn-sm';
   }
 }
 let _spotlightOn=false;
@@ -759,15 +762,8 @@ function loadMumbleStatus(){
     up.textContent=d.uptime?'Uptime: '+d.uptime:'';
     const mumbleBtn=document.getElementById('mumbleToggleBtn');
     if(mumbleBtn){
-      mumbleBtn.innerHTML=active?'&#9632;':'&#9654;';
-      mumbleBtn.style.background=active?'#e74c3c':'var(--green)';
-      mumbleBtn.style.color='#fff';
-      mumbleBtn.style.minWidth='40px';
-      mumbleBtn.style.width='40px';
-      mumbleBtn.style.height='40px';
-      mumbleBtn.style.padding='0';
-      mumbleBtn.style.fontSize='18px';
-      mumbleBtn.style.borderRadius='6px';
+      mumbleBtn.innerHTML=active?'<i class="bi bi-stop-fill"></i> Ferma':'<i class="bi bi-play-fill"></i> Avvia';
+      mumbleBtn.className='btn-o btn-sm '+(active?'btn-o-red':'btn-o-green');
       mumbleBtn.dataset.state=active?'on':'off';
     }
   }).catch(()=>{
@@ -801,9 +797,7 @@ function loadTabletStatus(){
     const btn=document.getElementById('tabletToggleBtn');
     if(btn){
       btn.textContent=on?'● ON':'○ OFF';
-      btn.style.background=on?'var(--green)':'var(--dim)';
-      btn.style.color=on?'#0a0f1a':'var(--text)';
-      btn.style.border='none';
+      btn.className='btn-o btn-sm '+(on?'btn-o-green':'btn-o-dim');
       btn.dataset.state=on?'on':'off';
     }
   }).catch(()=>{
@@ -811,7 +805,7 @@ function loadTabletStatus(){
     document.getElementById('tabletStatus').textContent='--';
     document.getElementById('tabletStatus').style.color='var(--dim)';
     const btn=document.getElementById('tabletToggleBtn');
-    if(btn){btn.textContent='--';btn.style.background='var(--dim)';btn.dataset.state='';}
+    if(btn){btn.textContent='--';btn.className='btn-o btn-o-dim btn-sm';btn.dataset.state='';}
   });
 }
 function tabletToggle(){
@@ -910,7 +904,7 @@ function loadApkList(){
   fetch('/panel/api/apk/list').then(r=>r.json()).then(files=>{
     const ul=document.getElementById('apkList');
     if(!files||files.length===0){ul.innerHTML='<li style="color:var(--dim)">Nessun APK trovato</li>';return;}
-    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">&#128241;</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><a class="btn btn-primary btn-icon" title="Download" href="/apk/'+encodeURIComponent(f.name)+'" download><i class="bi bi-download"></i></a><button class="btn btn-danger btn-icon" title="Delete" onclick="deleteApk(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
+    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">&#128241;</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><a class="btn-icon btn-o btn-o-blue" title="Download" href="/apk/'+encodeURIComponent(f.name)+'" download><i class="bi bi-download"></i></a><button class="btn-icon btn-o btn-o-red" title="Delete" onclick="deleteApk(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
   }).catch(e=>toastCenter('Errore: '+e,false));
 }
 
@@ -1045,8 +1039,8 @@ function loadSnapshots(floor){
         +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</div>'
         +'<div style="color:var(--dim)">'+f.mod_time+'</div>'
         +'<div style="display:flex;gap:6px;margin-top:6px">'
-        +'<a href="'+imgUrl+'" download="'+f.name+'" class="btn btn-primary btn-icon" style="text-decoration:none" title="Save"><i class="bi bi-download"></i></a>'
-        +'<button class="btn btn-danger btn-icon" style="font-size:14px" title="Delete" onclick="deleteSnapshot(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button>'
+        +'<a href="'+imgUrl+'" download="'+f.name+'" class="btn-icon btn-o btn-o-blue" style="text-decoration:none" title="Save"><i class="bi bi-download"></i></a>'
+        +'<button class="btn-icon btn-o btn-o-red" style="font-size:14px" title="Delete" onclick="deleteSnapshot(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button>'
         +'</div></div></div>';
     }).join('');
   }).catch(e=>toastCenter('Error: '+e,false));
@@ -1237,7 +1231,7 @@ function loadAudioTestFiles(){
   fetch('/panel/api/audiotest').then(r=>r.json()).then(files=>{
     const ul=document.getElementById('atFileList');
     if(!files||files.length===0){ul.innerHTML='<li style="color:var(--dim)">Nessun file .wav o .mp3 trovato</li>';return;}
-    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">'+(f.name.toLowerCase().endsWith('.mp3')?'\uD83C\uDFB5':'&#128266;')+'</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><button class="btn btn-primary btn-icon" title="Play in Browser" onclick="atPlayBrowser(\''+f.name+'\')"><i class="bi bi-play-fill"></i></button><button class="btn btn-icon" style="background:#7c3aed;color:#fff" title="Invia su Mumble (Test)" onclick="atRunTest(\''+f.name+'\')"><i class="bi bi-broadcast"></i></button><button class="btn btn-danger btn-icon" title="Elimina" onclick="atDeleteFile(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
+    ul.innerHTML=files.map(f=>'<li><div class="file-info"><span class="file-icon">'+(f.name.toLowerCase().endsWith('.mp3')?'\uD83C\uDFB5':'&#128266;')+'</span><span class="file-name">'+f.name+'</span><span class="file-size">'+fmtBytes(f.size)+'</span></div><div style="display:flex;gap:4px;flex-shrink:0"><button class="btn-icon btn-o btn-o-blue" title="Play in Browser" onclick="atPlayBrowser(\''+f.name+'\')"><i class="bi bi-play-fill"></i></button><button class="btn-icon btn-o btn-o-purple" title="Invia su Mumble (Test)" onclick="atRunTest(\''+f.name+'\')"><i class="bi bi-broadcast"></i></button><button class="btn-icon btn-o btn-o-red" title="Elimina" onclick="atDeleteFile(\''+f.name+'\')"><i class="bi bi-trash3-fill"></i></button></div></li>').join('');
   }).catch(e=>toastCenter('Errore: '+e,false));
 }
 
@@ -1799,7 +1793,7 @@ function loadCron(){
         <td style="padding:8px 6px;font-family:monospace;color:var(--accent);white-space:nowrap">${schedEsc}</td>
         <td style="padding:8px 6px;font-family:monospace;word-break:break-all">${cmdEsc}</td>
         <td style="padding:8px 6px;text-align:center">
-          <button class="btn btn-sm btn-danger" onclick="cronDelete(${j.index})" title="Elimina"><i class="bi bi-trash3"></i></button>
+          <button class="btn-o btn-o-red btn-sm" onclick="cronDelete(${j.index})" title="Elimina"><i class="bi bi-trash3"></i></button>
         </td>
       </tr>`;
     }).join('');

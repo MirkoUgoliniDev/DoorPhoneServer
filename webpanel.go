@@ -3112,7 +3112,7 @@ func (b *DoorPhoneServer) handleAIAnalyze(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
+	apiKey := readDotEnvKey("OPENROUTER_API_KEY")
 	if apiKey == "" {
 		http.Error(w, `{"error":"OPENROUTER_API_KEY not set"}`, http.StatusServiceUnavailable)
 		return
@@ -3255,7 +3255,7 @@ func (b *DoorPhoneServer) handleOpenRouterSelected(w http.ResponseWriter, r *htt
 // stays server-side. Returns the raw JSON from https://openrouter.ai/api/v1/models.
 func (b *DoorPhoneServer) handleOpenRouterModels(w http.ResponseWriter, r *http.Request) {
 	panelSecurityHeaders(w)
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
+	apiKey := readDotEnvKey("OPENROUTER_API_KEY")
 	if apiKey == "" {
 		http.Error(w, `{"error":"OPENROUTER_API_KEY not set"}`, http.StatusServiceUnavailable)
 		return

@@ -27,6 +27,16 @@ textarea{width:100%;height:calc(100vh - 160px);background:#0d1117;color:#c9d1d9;
 .floor-btn{background:var(--card);color:var(--dim);border:1px solid var(--border)}
 .floor-btn.active{background:var(--accent);color:#0f172a;border-color:var(--accent);font-weight:700}
 .btn-icon{padding:5px 9px;font-size:16px;line-height:1}
+/* Pulsanti "outline": stile uniforme del pannello (vedi toolbar Log Viewer / Config Editor).
+   Sfondo trasparente, bordo colorato, riempimento al hover. Abbinare a .btn-icon o .btn-sm per la dimensione. */
+.btn-o{background:transparent;border:1px solid;border-radius:5px;cursor:pointer;font-weight:500;transition:background .15s,color .15s}
+.btn-o:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+.btn-o-blue{border-color:var(--accent);color:var(--accent)}.btn-o-blue:hover{background:var(--accent);color:#0f172a}
+.btn-o-purple{border-color:#7c3aed;color:#a78bfa}.btn-o-purple:hover{background:#7c3aed;color:#fff}
+.btn-o-red{border-color:var(--red);color:var(--red)}.btn-o-red:hover{background:var(--red);color:#fff}
+.btn-o-green{border-color:var(--green);color:var(--green)}.btn-o-green:hover{background:var(--green);color:#0f172a}
+.btn-o-orange{border-color:var(--orange);color:var(--orange)}.btn-o-orange:hover{background:var(--orange);color:#0f172a}
+.btn-o-dim{border-color:var(--border);color:var(--dim)}.btn-o-dim:hover{background:var(--border);color:var(--text)}
 .mute-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;margin-left:8px;cursor:pointer;user-select:none;letter-spacing:.5px;transition:background .2s,color .2s}
 .mute-badge.mute-off{background:#22c55e33;color:#22c55e;border:1px solid #22c55e55}
 .mute-badge.mute-on{background:#ef444433;color:#ef4444;border:1px solid #ef444455}
@@ -162,10 +172,13 @@ canvas{display:block;width:100%;height:280px}
 #l2rFilesBody td:last-child,#l2rFilesBody td:nth-child(2){color:var(--dim);font-size:12px}
 
 /* Bottoni rilievo ESP32 (Portone + Tablet) — stessa dimensione */
-.btn-relief{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;font-size:14px;font-weight:600;border:none;border-radius:8px;cursor:pointer;user-select:none;transition:transform .08s,box-shadow .08s,background .2s,color .2s}
-.btn-relief-red{background:var(--red);color:#fff;box-shadow:0 4px 0 #991b1b,0 6px 14px rgba(239,68,68,.35)}
-.btn-relief-red:active,.btn-relief-red.pressing{transform:translateY(3px);box-shadow:0 1px 0 #991b1b,0 2px 6px rgba(239,68,68,.2);filter:brightness(.9)}
-.btn-relief-off{background:#1e293b;color:#64748b;box-shadow:0 4px 0 #0a0f1a,0 6px 14px rgba(0,0,0,.4)}
-.btn-relief-off:active,.btn-relief-off.pressing{transform:translateY(3px);box-shadow:0 1px 0 #0a0f1a,0 2px 4px rgba(0,0,0,.3)}
-.btn-relief-on{background:#22c55e;color:#fff;box-shadow:0 4px 0 #15803d,0 6px 14px rgba(34,197,94,.3)}
-.btn-relief-on:active,.btn-relief-on.pressing{transform:translateY(3px);box-shadow:0 1px 0 #15803d,0 2px 4px rgba(34,197,94,.15)}
+.btn-relief{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 22px;font-size:14px;font-weight:600;letter-spacing:.2px;border:none;border-radius:10px;cursor:pointer;user-select:none;transition:transform .1s ease,box-shadow .1s ease,filter .15s}
+.btn-relief-red{background:linear-gradient(180deg,#f05252,#cf2626);color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.25);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1px 0 rgba(0,0,0,.2),0 3px 0 #991b1b,0 6px 12px rgba(0,0,0,.35)}
+.btn-relief-red:hover{filter:brightness(1.06)}
+.btn-relief-red:active,.btn-relief-red.pressing{transform:translateY(2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 0 #991b1b,0 3px 6px rgba(0,0,0,.3)}
+.btn-relief-off{background:linear-gradient(180deg,#27364b,#1a2536);color:#7c8aa0;text-shadow:0 1px 1px rgba(0,0,0,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 0 #0a0f1a,0 6px 12px rgba(0,0,0,.4)}
+.btn-relief-off:hover{filter:brightness(1.1)}
+.btn-relief-off:active,.btn-relief-off.pressing{transform:translateY(2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 1px 0 #0a0f1a,0 3px 6px rgba(0,0,0,.35)}
+.btn-relief-on{background:linear-gradient(180deg,#2ee06a,#16a34a);color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.25);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.18),0 3px 0 #15803d,0 6px 12px rgba(0,0,0,.35)}
+.btn-relief-on:hover{filter:brightness(1.06)}
+.btn-relief-on:active,.btn-relief-on.pressing{transform:translateY(2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 1px 0 #15803d,0 3px 6px rgba(0,0,0,.3)}

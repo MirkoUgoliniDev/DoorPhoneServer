@@ -160,7 +160,7 @@ func (b *DoorPhoneServer) takeSnapshotFFmpeg(fileName string) {
 		rtspURL = strings.Replace(rtspURL, "rtsp://", "rtsp://"+u+":"+p+"@", 1)
 	}
 
-	cmd := exec.Command("ffmpeg", "-y", "-rtsp_transport", "tcp", "-i", rtspURL, "-frames:v", "1", fileName)
+	cmd := exec.Command("ffmpeg", "-y", "-rtsp_transport", "tcp", "-i", rtspURL, "-frames:v", "1", "-update", "1", fileName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Error taking snapshot via ffmpeg: %v\n%s\n", err, string(output))
