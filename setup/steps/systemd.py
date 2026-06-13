@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from lib.step_base import Step, Status
-from lib.constants import TK_USER, GOBIN, REPO_ROOT
+from lib.constants import TK_USER, TK_GROUP, GOBIN, REPO_ROOT
 
 
 class StepSystemdService(Step):
@@ -68,7 +68,7 @@ class StepSystemdService(Step):
                 existing = r.stdout if r.returncode == 0 else ""
             if "Go dev environment" not in existing:
                 runner.write(bashrc, existing + dev_block, sudo=True)
-                runner.run(["chown", f"{TK_USER}:{TK_USER}", str(bashrc)], sudo=True)
+                runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(bashrc)], sudo=True)
                 runner.log("  ✓ GOBIN e PATH aggiunti a ~/.bashrc")
             else:
                 runner.log("  ~/.bashrc già configurato per Go")

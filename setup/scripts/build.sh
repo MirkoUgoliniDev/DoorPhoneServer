@@ -31,11 +31,8 @@ echo ""
 cd "$PROJECT_ROOT"
 "$GO" build -v -buildvcs=false -trimpath -ldflags="-s -w" \
     -o "$FINALBIN" \
-    ./cmd/doorphoneserver 2>&1 | while IFS= read -r line; do
-    echo "    $line"
-done
-
-BUILD_EXIT=${PIPESTATUS[0]}
+    ./cmd/doorphoneserver 2>&1
+BUILD_EXIT=$?
 
 if [ $BUILD_EXIT -eq 0 ]; then
     echo ""

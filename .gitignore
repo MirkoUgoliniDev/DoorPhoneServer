@@ -6,6 +6,7 @@
 
 # Environment variables (secrets)
 .env
+.git-credentials
 
 doorphoneserver.xml.bak.*
 

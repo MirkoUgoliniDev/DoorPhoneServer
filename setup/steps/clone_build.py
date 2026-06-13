@@ -11,9 +11,7 @@ import shlex
 import subprocess
 from pathlib import Path
 from lib.step_base import Step, Status
-from lib.constants import TK_USER, GOPATH, GOBIN
-
-REPO_URL = "https://github.com/MirkoUgoliniDev/DoorPhoneServer"
+from lib.constants import TK_USER, GOPATH, GOBIN, REPO_URL, REPO_BRANCH
 
 
 class StepCloneAndBuild(Step):
@@ -72,7 +70,7 @@ class StepCloneAndBuild(Step):
                 user=TK_USER, env=build_env
             )
             ok, _ = runner.run(
-                ["git", "-C", str(home), "pull", "origin", "main"],
+                ["git", "-C", str(home), "pull", "origin", REPO_BRANCH],
                 user=TK_USER, env=build_env,
                 retries=3, retry_delay=5.0
             )
@@ -100,8 +98,9 @@ class StepCloneAndBuild(Step):
         # --- Build ---
         runner.log("  go build... (può richiedere 5-15 minuti su Pi)")
         build_cmd = (
+            f"set -e; "
             f"cd {shlex.quote(str(home))} && "
-            f"{shlex.quote(go_bin)} build -v -trimpath "
+            f"{shlex.quote(go_bin)} build -v -buildvcs=false -trimpath "
             f"'-ldflags=-s -w' "
             f"-o {shlex.quote(str(GOBIN / 'doorphoneserver'))} "
             f"./cmd/doorphoneserver"

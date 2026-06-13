@@ -6,7 +6,7 @@
       "color": "green",
       "items": [
         "Utente 'doorphoneserver' con home in /home/doorphoneserver/",
-        "Directory GOPATH: /home/doorphoneserver/gocode/",
+        "Directory GOPATH (cache moduli): /home/doorphoneserver/go/",
         "Directory GOBIN:  /home/doorphoneserver/bin/"
       ]
     },

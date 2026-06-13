@@ -71,16 +71,22 @@ class StepDataDir(Step):
             runner.run(["chmod", "775", str(snaps_dst)], sudo=True)
 
         # --- Certificato TLS per Mumble (in home/) ---
-        runner.log("  Generazione certificato TLS...")
-        cert_cmd = (
-            f"openssl req -x509 -newkey rsa:4096 "
-            f"-keyout {home}/nopasskey.pem "
-            f"-out {home}/cert.pem "
-            f"-days 1095 -nodes "
-            f"-subj '/CN=doorphoneserver' 2>/dev/null && "
-            f"cat {home}/nopasskey.pem {home}/cert.pem > {home}/mumble.pem"
-        )
-        runner.run(["bash", "-c", cert_cmd], user=TK_USER)
+        # Non rigenerare se esiste già: i tablet pinnano il certificato del client
+        # e una rigenerazione su re-run del wizard causerebbe errori di autenticazione.
+        mumble_pem = home / "mumble.pem"
+        if runner.dry_run or not mumble_pem.exists():
+            runner.log("  Generazione certificato TLS...")
+            cert_cmd = (
+                f"openssl req -x509 -newkey rsa:4096 "
+                f"-keyout {home}/nopasskey.pem "
+                f"-out {home}/cert.pem "
+                f"-days 1095 -nodes "
+                f"-subj '/CN=doorphoneserver' 2>/dev/null && "
+                f"cat {home}/nopasskey.pem {home}/cert.pem > {home}/mumble.pem"
+            )
+            runner.run(["bash", "-c", cert_cmd], user=TK_USER)
+        else:
+            runner.log("  ✓ Certificato TLS già presente — mantenuto (skip rigenerazione)")
 
         # --- doorphoneserver.xml: copia dal repo e aggiorna certificate ---
         xml_src = REPO_ROOT / "doorphoneserver.xml"

@@ -8,6 +8,9 @@ TK_USER        = "doorphoneserver"
 TK_GROUP       = "doorphoneserver"
 DEFAULT_HOSTNAME = "doorphoneserver"
 
+REPO_URL    = "https://github.com/MirkoUgoliniDev/DoorPhoneServer"
+REPO_BRANCH = "main"
+
 REPO_ROOT  = Path(__file__).parent.parent.parent.resolve()
 GOPATH     = Path(f"/home/{TK_USER}/go")
 GOBIN      = Path(f"/home/{TK_USER}/bin")
