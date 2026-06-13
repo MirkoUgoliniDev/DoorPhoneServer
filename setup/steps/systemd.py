@@ -50,6 +50,10 @@ class StepSystemdService(Step):
         runner.run(["systemctl", "enable", "doorphoneserver"], sudo=True)
 
         # --- Crontab (riavvii notturni + restart tablet) ---
+        # Il demone cron non è installato di default su Debian 13: assicura che
+        # sia abilitato e attivo prima di installare i job, altrimenti il comando
+        # crontab fallisce e il pannello mostra "Nessun job crontab trovato".
+        runner.run(["systemctl", "enable", "--now", "cron"], sudo=True)
         cron_script = REPO_ROOT / "setup" / "scripts" / "setup_crontab.sh"
         if cron_script.exists():
             runner.run(["bash", str(cron_script)], user=TK_USER)

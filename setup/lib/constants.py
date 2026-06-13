@@ -24,6 +24,7 @@ GO_ARCH_MAP = {
 APT_PACKAGES = [
     "libopenal-dev", "libopus-dev", "libasound2-dev", "alsa-utils",
     "git", "ffmpeg", "mplayer", "screen",
+    "cron",            # demone crontab: non installato di default su Debian 13 (trixie)
     "mumble-server",
     "build-essential", "curl", "wget", "openssl", "ca-certificates",
     "python3-tk", "python3-flask",
@@ -34,4 +35,4 @@ APT_PACKAGES = [
 
 # "sudo" rimosso: doorphoneserver non deve avere sudo pieno.
 # L'accesso privilegiato è gestito tramite /etc/sudoers.d/doorphoneserver-*
-USER_GROUPS = ["audio", "gpio", "dialout"]
+USER_GROUPS = ["audio", "gpio", "dialout", "video"]

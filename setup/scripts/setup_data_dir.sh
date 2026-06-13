@@ -29,6 +29,18 @@ sudo mkdir -p "$SNAPSHOT_DIR"
 sudo chown doorphoneserver:doorphoneserver "$SNAPSHOT_DIR"
 sudo chmod 775 "$SNAPSHOT_DIR"
 
+# Crea directory soundfiles (events + audiotest).
+# Il pannello legge ~/soundfiles/events e ~/soundfiles/audiotest; senza queste
+# cartelle il tab Sound risponde "Cannot read events dir" (non-JSON).
+SOUNDS_DIR=/home/doorphoneserver/soundfiles
+echo "Creazione $SOUNDS_DIR..."
+sudo mkdir -p "$SOUNDS_DIR/events" "$SOUNDS_DIR/audiotest"
+# Copia i file di default dal repo (cwd = root del repo), senza sovrascrivere
+if [ -d ./soundfiles ]; then
+    sudo cp -rn ./soundfiles/. "$SOUNDS_DIR/" 2>/dev/null || true
+fi
+sudo chown -R doorphoneserver:doorphoneserver "$SOUNDS_DIR"
+
 # Verifica
 echo ""
 echo "=== Verifica setup ==="

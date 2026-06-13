@@ -40,6 +40,36 @@ class StepDataDir(Step):
         if not runner.dry_run:
             runner.run(["chown", "-R", f"{TK_USER}:{TK_GROUP}", str(prefs)], sudo=True)
 
+        # --- Cartella soundfiles/ (events + audiotest) ---
+        # Il pannello legge ~/soundfiles/events e ~/soundfiles/audiotest accanto
+        # a doorphoneserver.xml. Senza queste cartelle il tab Sound risponde
+        # "Cannot read events dir" (non-JSON) e l'Audio Test resta vuoto.
+        sounds_dst = home / "soundfiles"
+        for sub in ("events", "audiotest"):
+            runner.run(["mkdir", "-p", str(sounds_dst / sub)], sudo=True)
+        sounds_src = REPO_ROOT / "soundfiles"
+        if not runner.dry_run and sounds_src.exists():
+            # Copia i file di default dal repo senza sovrascrivere quelli esistenti
+            runner.run(
+                ["bash", "-c",
+                 f"cp -rn {sounds_src}/. {sounds_dst}/ 2>/dev/null || true"],
+                sudo=True,
+            )
+        if not runner.dry_run:
+            runner.run(["chown", "-R", f"{TK_USER}:{TK_GROUP}", str(sounds_dst)], sudo=True)
+        else:
+            runner.log(f"  [DRY-RUN] copia soundfiles/ → {sounds_dst}")
+
+        # --- Cartella snapshots/ per le catture ffmpeg dalla telecamera ---
+        # Default Camera.Snapshot.Dir = ~/snapshots. Il servizio gira come
+        # doorphoneserver e deve potervi scrivere, altrimenti ffmpeg fallisce
+        # con "Input/output error". Permessi 775 + owner del servizio.
+        snaps_dst = home / "snapshots"
+        runner.run(["mkdir", "-p", str(snaps_dst)], sudo=True)
+        if not runner.dry_run:
+            runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(snaps_dst)], sudo=True)
+            runner.run(["chmod", "775", str(snaps_dst)], sudo=True)
+
         # --- Certificato TLS per Mumble (in home/) ---
         runner.log("  Generazione certificato TLS...")
         cert_cmd = (

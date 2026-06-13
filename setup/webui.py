@@ -370,6 +370,21 @@ HTML = r"""<!DOCTYPE html>
               </div>
             </div>
           </div>
+          <div class="mt-2">
+            <span class="text-xs font-semibold" style="color:var(--muted)">Certificato server (opzionale) — caricalo per non dover riconfigurare i tablet dopo la migrazione</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.35rem">
+              <div>
+                <label class="block text-xs mb-1" style="color:var(--muted)">Certificato (cert.pem)</label>
+                <input type="file" id="mumble_cert_file" accept=".pem,.crt,.cer" onchange="loadPem(this,'cert')">
+                <div id="mumble_cert_status" class="text-xs mt-1" style="color:var(--muted)"></div>
+              </div>
+              <div>
+                <label class="block text-xs mb-1" style="color:var(--muted)">Chiave privata (key.pem)</label>
+                <input type="file" id="mumble_key_file" accept=".pem,.key" onchange="loadPem(this,'key')">
+                <div id="mumble_key_status" class="text-xs mt-1" style="color:var(--muted)"></div>
+              </div>
+            </div>
+          </div>
         </div>
         <hr style="border-color:#313244;margin-bottom:.75rem">
         <!-- Camera IP -->
@@ -1164,10 +1179,29 @@ function togglePwd(id) {
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
+// Contenuto PEM dei certificati Mumble caricati dall'utente (testo, non file binari)
+window._mumblePem = {cert: '', key: ''};
+function loadPem(input, kind) {
+  const status = document.getElementById('mumble_' + kind + '_status');
+  const f = input.files && input.files[0];
+  if (!f) { window._mumblePem[kind] = ''; status.textContent = ''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const txt = e.target.result || '';
+    window._mumblePem[kind] = txt;
+    const ok = /-----BEGIN/.test(txt);
+    status.textContent = ok ? '✓ ' + f.name : '⚠ non sembra un file PEM valido';
+    status.style.color = ok ? 'var(--ok, #a6e3a1)' : 'var(--warn, #f9e2af)';
+  };
+  reader.readAsText(f);
+}
+
 function getEnvFields() {
   return {
     env_mumble_username: document.getElementById('env_mumble_username').value,
     env_mumble_password: document.getElementById('env_mumble_password').value,
+    mumble_cert_pem:     window._mumblePem.cert,
+    mumble_key_pem:      window._mumblePem.key,
     env_camera_username: document.getElementById('env_camera_username').value,
     env_camera_password: document.getElementById('env_camera_password').value,
     env_pushover_token:  document.getElementById('env_pushover_token').value,
@@ -1714,7 +1748,8 @@ def save_env():
         )
         if r.returncode != 0:
             return jsonify({"ok": False, "error": r.stderr.strip() or "sudo tee fallito"})
-        subprocess.run(["sudo", "chmod", "640", str(env_path)])
+        # 660 (non 640): così l'utente pi può salvare .env da VSCode
+        subprocess.run(["sudo", "chmod", "660", str(env_path)])
         subprocess.run(["sudo", "chown", f"{TK_USER}:{TK_GROUP}", str(env_path)])
         return jsonify({"ok": True})
     except Exception as e:
@@ -1745,6 +1780,10 @@ def start():
             "log2ram_log_disk_size": data.get("log2ram_log_disk_size", "256M"),
             "env_mumble_username": data.get("env_mumble_username", ""),
             "env_mumble_password": data.get("env_mumble_password", ""),
+            # Certificato server Mumble fornito dall'utente (opzionale): se presente
+            # viene "pinnato" così i tablet non devono riaccettarlo dopo la migrazione.
+            "mumble_cert_pem":     data.get("mumble_cert_pem", ""),
+            "mumble_key_pem":      data.get("mumble_key_pem", ""),
             "env_camera_username": data.get("env_camera_username", ""),
             "env_camera_password": data.get("env_camera_password", ""),
             "env_pushover_token":  data.get("env_pushover_token", ""),
