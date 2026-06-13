@@ -1974,6 +1974,15 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 		reqPort = "8080"
 	}
 
+	// Il server Mumble è configurato come loopback (127.0.0.1) perché
+	// DoorPhoneServer gira sulla stessa macchina di Murmur. I TABLET però non
+	// possono usare 127.0.0.1 (sarebbero loro stessi): devono raggiungere il Pi
+	// all'IP con cui hanno contattato il pannello (reqHost). Sostituiamo solo gli
+	// indirizzi di loopback, lasciando intatto un eventuale Mumble remoto.
+	if mumbleCfg.Server == "127.0.0.1" || mumbleCfg.Server == "localhost" || mumbleCfg.Server == "::1" {
+		mumbleCfg.Server = reqHost
+	}
+
 	type AppConfig struct {
 		Kiosk         bool         `json:"kiosk"`
 		HideStatusBar bool         `json:"hide_status_bar"`
