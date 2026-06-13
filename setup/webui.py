@@ -446,11 +446,11 @@ HTML = r"""<!DOCTYPE html>
       <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244;display:grid;grid-template-columns:1fr 1fr;gap:.75rem;align-items:end">
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
-          <select id="playCard"><option value="0">0 — rilevamento...</option></select>
+          <select id="playCard" onchange="_audioUserChose=true"><option value="0">0 — rilevamento...</option></select>
         </div>
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO INPUT (card n.)</label>
-          <select id="capCard"><option value="0">0 — rilevamento...</option></select>
+          <select id="capCard" onchange="_audioUserChose=true"><option value="0">0 — rilevamento...</option></select>
         </div>
         <div class="col-span-2 mt-1 flex gap-2 flex-wrap" style="grid-column:1/-1">
           <button onclick="refreshCards(this)" class="btn-primary" style="background:#45475a;color:#cdd6f4;font-size:.85rem;padding:.4rem 1.1rem">↺ Aggiorna schede</button>
@@ -1252,13 +1252,38 @@ function _populateCardSelect(selectId, cards, preferIndex) {
   return cards;
 }
 
+// true appena l'utente sceglie a mano una scheda: da quel momento NON sovrascrivo
+// più la sua scelta col default automatico.
+let _audioUserChose = false;
+
+// Default consigliato: preferisci una scheda full-duplex (presente sia in output
+// che input = la USB), così OUTPUT e INPUT vanno sulla stessa scheda USB e non
+// sull'audio onboard. Le liste arrivano già ordinate USB-first dal backend.
+function _bestDefaultPair(playCards, capCards) {
+  const capIdx = new Set(capCards.map(c => c.index));
+  for (const pc of playCards) {
+    if (capIdx.has(pc.index)) return { play: pc.index, cap: pc.index };
+  }
+  return {
+    play: playCards.length ? playCards[0].index : 0,
+    cap:  capCards.length  ? capCards[0].index  : 0,
+  };
+}
+
 function refreshCards(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '↺ …'; }
   fetch('/audio/refresh_cards')
     .then(r => r.json())
     .then(d => {
-      const curPlay = parseInt(document.getElementById('playCard').value) || 0;
-      const curCap  = parseInt(document.getElementById('capCard').value)  || 0;
+      let curPlay, curCap;
+      if (_audioUserChose) {
+        curPlay = parseInt(document.getElementById('playCard').value) || 0;
+        curCap  = parseInt(document.getElementById('capCard').value)  || 0;
+      } else {
+        const best = _bestDefaultPair(d.play_cards, d.cap_cards);
+        curPlay = best.play;
+        curCap  = best.cap;
+      }
       _populateCardSelect('playCard', d.play_cards, curPlay);
       _populateCardSelect('capCard',  d.cap_cards,  curCap);
       // Canali della scheda selezionata
