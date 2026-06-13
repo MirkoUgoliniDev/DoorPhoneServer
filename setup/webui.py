@@ -24,7 +24,7 @@ if _HERE not in sys.path:
 
 from flask import Flask, Response, request, jsonify, render_template_string
 
-from lib.constants import WIZARD_VERSION, DEFAULT_HOSTNAME, LOG_FILE
+from lib.constants import WIZARD_VERSION, DEFAULT_HOSTNAME, LOG_FILE, REPO_ROOT
 from lib.runner   import Runner, get_abort_event
 from lib.sysinfo  import SystemInfo
 from lib.step_base import Status, STEP_ICONS, validate_hostname
@@ -2466,16 +2466,26 @@ def audio_agc():
 @app.route("/audio/list_files")
 def audio_list_files():
     import pathlib
-    base = pathlib.Path("/home/doorphoneserver/soundfiles")
+    # Durante il setup i file di test stanno nel repo clonato (REPO_ROOT/soundfiles);
+    # dopo l'installazione anche in /home/doorphoneserver/soundfiles. Cerca in
+    # entrambi così il test audio funziona sia durante che dopo l'installazione.
+    candidates = [
+        REPO_ROOT / "soundfiles",
+        pathlib.Path("/home/doorphoneserver/soundfiles"),
+    ]
     exts = {".wav", ".mp3", ".ogg", ".flac"}
     result = []
-    if base.exists():
+    seen = set()
+    for base in candidates:
+        if not base.exists():
+            continue
         for f in sorted(base.rglob("*")):
             if f.suffix.lower() in exts and f.is_file():
-                result.append({
-                    "path": str(f),
-                    "label": str(f.relative_to(base))
-                })
+                label = str(f.relative_to(base))
+                if label in seen:
+                    continue
+                seen.add(label)
+                result.append({"path": str(f), "label": label})
     return jsonify(result)
 
 
