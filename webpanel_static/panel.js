@@ -272,15 +272,32 @@ function diskCleanup(){
 }
 
 // --- Config ---
+let _configLoaded = false;
+function _setSaveConfigEnabled(enabled){
+  const btn=document.getElementById('btnSaveConfig');
+  if(btn) btn.disabled=!enabled;
+}
 function loadConfig(){
+  _configLoaded=false;
+  _setSaveConfigEnabled(false);
+  document.getElementById('configMsg').textContent='Loading…';
   fetch('/panel/api/config').then(r=>r.text()).then(t=>{
     const ed=getAceEditor();
     if(ed){ ed.setValue(t,-1); }
+    _configLoaded=true;
+    _setSaveConfigEnabled(true);
     document.getElementById('configMsg').textContent='Loaded';
-  }).catch(e=>toastCenter('Error loading config: '+e,false));
+  }).catch(e=>{
+    document.getElementById('configMsg').textContent='Load Error';
+    toastCenter('Error loading config: '+e,false);
+  });
 }
 
 function saveConfig(){
+  if(!_configLoaded){
+    toastCenter('Attendi il caricamento della configurazione',false);
+    return;
+  }
   const ed=getAceEditor();
   const body=ed ? ed.getValue() : document.getElementById('configEditor').innerText;
   // client-side XML validation

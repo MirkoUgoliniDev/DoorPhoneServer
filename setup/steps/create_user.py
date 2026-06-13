@@ -51,7 +51,9 @@ class StepCreateUser(Step):
         # (es. pi) di fare stat/exists su path sotto /home/doorphoneserver/
         runner.run(["chmod", "755", f"/home/{TK_USER}"], sudo=True)
 
-        for d in [GOPATH, GOBIN, GOPATH / "src" / "github.com" / "doorphoneserver"]:
+        # GOPATH è usato solo per la cache dei moduli Go (go/pkg/mod).
+        # Il sorgente vive direttamente in /home/doorphoneserver (passo Clone & Build).
+        for d in [GOPATH, GOBIN]:
             runner.run(["mkdir", "-p", str(d)], sudo=True)
             runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(d)], sudo=True)
 

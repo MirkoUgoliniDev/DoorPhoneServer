@@ -49,6 +49,32 @@ class StepSystemdService(Step):
         runner.run(["systemctl", "daemon-reload"], sudo=True)
         runner.run(["systemctl", "enable", "doorphoneserver"], sudo=True)
 
+        # --- Ambiente sviluppo: GOBIN e PATH in ~/.bashrc ---
+        # Permette all'utente doorphoneserver di usare `go build`, `go run` ecc.
+        # direttamente dalla home (che è il repo) senza dover impostare manualmente
+        # le variabili d'ambiente ad ogni sessione SSH.
+        bashrc = Path(f"/home/{TK_USER}/.bashrc")
+        dev_block = (
+            "\n# DoorPhoneServer — Go dev environment\n"
+            f"export GOBIN={GOBIN}\n"
+            "export PATH=$PATH:/usr/local/go/bin:$GOBIN\n"
+        )
+        if not runner.dry_run:
+            try:
+                existing = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+            except PermissionError:
+                import subprocess as _sp
+                r = _sp.run(["sudo", "cat", str(bashrc)], capture_output=True, text=True)
+                existing = r.stdout if r.returncode == 0 else ""
+            if "Go dev environment" not in existing:
+                runner.write(bashrc, existing + dev_block, sudo=True)
+                runner.run(["chown", f"{TK_USER}:{TK_USER}", str(bashrc)], sudo=True)
+                runner.log("  ✓ GOBIN e PATH aggiunti a ~/.bashrc")
+            else:
+                runner.log("  ~/.bashrc già configurato per Go")
+        else:
+            runner.log(f"  [DRY-RUN] aggiunge Go dev env a {bashrc}")
+
         # --- Crontab (riavvii notturni + restart tablet) ---
         # Il demone cron non è installato di default su Debian 13: assicura che
         # sia abilitato e attivo prima di installare i job, altrimenti il comando

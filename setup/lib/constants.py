@@ -9,7 +9,7 @@ TK_GROUP       = "doorphoneserver"
 DEFAULT_HOSTNAME = "doorphoneserver"
 
 REPO_ROOT  = Path(__file__).parent.parent.parent.resolve()
-GOPATH     = Path(f"/home/{TK_USER}/gocode")
+GOPATH     = Path(f"/home/{TK_USER}/go")
 GOBIN      = Path(f"/home/{TK_USER}/bin")
 LOCK_FILE  = Path("/tmp/doorphoneserver-setup.lock")
 LOG_FILE   = Path("/tmp/doorphoneserver-setup.log")

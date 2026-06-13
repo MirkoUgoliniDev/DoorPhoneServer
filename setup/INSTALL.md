@@ -73,9 +73,13 @@ sudo apt install python3-flask -y
 ## Passo 4 — Clona il repository
 
 ```bash
-git clone https://github.com/MirkoUgoliniDev/DoorPhoneServer ~/doorphoneserver-setup
-cd ~/doorphoneserver-setup
+git clone https://github.com/MirkoUgoliniDev/DoorPhoneServer ~/doorphoneserver
+cd ~/doorphoneserver
 ```
+
+> **Nota:** il wizard userà questa directory come punto di partenza.
+> Il passo **Clone & Build** clonerà il repo direttamente in `/home/doorphoneserver/`
+> (la home dell'utente di servizio), rendendola una copia di sviluppo completa.
 
 ---
 
@@ -171,6 +175,36 @@ systemctl status mumble-server
 
 ---
 
+## Sviluppo sul Raspberry Pi
+
+Dopo il setup, `/home/doorphoneserver` è a tutti gli effetti un clone del repository
+pronto per lo sviluppo. Entra come utente di servizio per lavorare direttamente sul codice:
+
+```bash
+sudo -i -u doorphoneserver
+cd ~              # /home/doorphoneserver — il repo è qui
+```
+
+`GOBIN` e il PATH di Go sono già configurati in `~/.bashrc`. Per compilare e riavviare:
+
+```bash
+go build -trimpath -ldflags='-s -w' -o bin/doorphoneserver ./cmd/doorphoneserver
+sudo systemctl restart doorphoneserver
+```
+
+> **Attenzione:** `webpanel_static/` è **embedded nel binario** a compile-time
+> (via `//go:embed`). Ogni modifica ai file JS/HTML/CSS richiede un rebuild
+> per essere visibile nel pannello web.
+
+Per ri-eseguire il wizard (es. aggiornare la configurazione audio):
+
+```bash
+cd /home/doorphoneserver
+python3 setup/wizard.py --web
+```
+
+---
+
 ## Comandi utili
 
 ```bash
@@ -191,11 +225,14 @@ python3 setup/wizard.py --dry-run --tui
 ## Struttura file installati
 
 ```
-/home/doorphoneserver/
+/home/doorphoneserver/               ← è anche il repository git (clone completo)
 ├── bin/doorphoneserver              ← binario compilato
 ├── doorphoneserver.xml              ← configurazione principale
 ├── snapshots/                       ← snapshot telecamera (owner doorphoneserver, 775)
-└── gocode/src/github.com/MirkoUgoliniDev/doorphoneserver/
+├── go/                              ← cache moduli Go (GOPATH)
+├── cmd/doorphoneserver/             ← entry point sorgente
+├── webpanel_static/                 ← frontend web (embedded nel binario a compile-time)
+└── setup/                           ← wizard di installazione
 
 /var/lib/doorphoneserver/data/       ← dati runtime (alarms.json, audio_calls_history.json)
 

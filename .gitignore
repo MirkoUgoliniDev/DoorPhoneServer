@@ -38,7 +38,12 @@ go.work.sum
 
 # Go module cache e binari compilati (GOPATH locale)
 gocode/
+go/
 bin/
+
+# Certificati TLS generati dal setup (machine-specific)
+cert.pem
+nopasskey.pem
 
 # OS files
 .DS_Store

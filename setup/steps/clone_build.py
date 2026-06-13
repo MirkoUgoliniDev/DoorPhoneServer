@@ -1,17 +1,26 @@
-"""Passo 9 — Clone repo e build binario doorphoneserver."""
+"""Passo 9 — Clone repo e build binario doorphoneserver.
+
+La home dell'utente (/home/doorphoneserver) È il repository git:
+- Se .git non esiste ancora: git init + remote add + pull
+- Se .git esiste già: git pull (es. re-run del wizard o macchina di sviluppo)
+I file gitignored (.env, .bashrc, certificati) non vengono toccati dal pull.
+"""
 
 import os
 import shlex
 import subprocess
+from pathlib import Path
 from lib.step_base import Step, Status
 from lib.constants import TK_USER, GOPATH, GOBIN
+
+REPO_URL = "https://github.com/MirkoUgoliniDev/DoorPhoneServer"
 
 
 class StepCloneAndBuild(Step):
     def __init__(self):
         super().__init__(
             "Clone & Build",
-            "Clona il repository GitHub e compila il binario doorphoneserver"
+            "Clona il repository GitHub nella home e compila il binario doorphoneserver"
         )
 
     def execute(self, runner, sysinfo, config):
@@ -21,39 +30,49 @@ class StepCloneAndBuild(Step):
             self._set_status(Status.FAILED)
             return False
 
-        src_dir = GOPATH / "src" / "github.com" / "doorphoneserver" / "doorphoneserver"
+        home    = Path(f"/home/{TK_USER}")
         go_bin  = "/usr/local/go/bin/go"
 
         build_env = {
             "GOPATH": str(GOPATH),
-            "HOME":   f"/home/{TK_USER}",
+            "GOBIN":  str(GOBIN),
+            "HOME":   str(home),
             "PATH":   f"/usr/local/go/bin:{os.environ.get('PATH', '/usr/bin:/bin')}",
             "TMPDIR": "/var/tmp",
             "GOFLAGS": "",
         }
 
+        # --- Clone o aggiornamento repo ---
         try:
-            _dir_exists = src_dir.exists()
+            git_dir_exists = (home / ".git").exists()
         except PermissionError:
-            _dir_exists = subprocess.run(
-                ["sudo", "-u", TK_USER, "test", "-d", str(src_dir)],
+            git_dir_exists = subprocess.run(
+                ["sudo", "-u", TK_USER, "test", "-d", str(home / ".git")],
                 capture_output=True
             ).returncode == 0
 
-        if not runner.dry_run and _dir_exists:
-            runner.log("  Repo già presente → git pull")
+        if not runner.dry_run and git_dir_exists:
+            runner.log("  Repo già presente in home → git pull")
             ok, _ = runner.run(
-                ["git", "-C", str(src_dir), "pull"],
+                ["git", "-C", str(home), "pull", "--ff-only"],
                 user=TK_USER, env=build_env, retries=2
             )
             if not ok:
                 runner.log("  ⚠ git pull fallito — uso il codice esistente")
         else:
-            runner.log("  git clone...")
+            runner.log(f"  Inizializzazione repo in {home}...")
+            # git clone non funziona in directory non-vuota (home ha già .env ecc.),
+            # quindi usiamo init + remote + pull. I file gitignored non vengono toccati.
+            runner.run(
+                ["git", "-C", str(home), "init"],
+                user=TK_USER, env=build_env
+            )
+            runner.run(
+                ["git", "-C", str(home), "remote", "add", "origin", REPO_URL],
+                user=TK_USER, env=build_env
+            )
             ok, _ = runner.run(
-                ["git", "clone",
-                 "https://github.com/MirkoUgoliniDev/DoorPhoneServer",
-                 str(src_dir)],
+                ["git", "-C", str(home), "pull", "origin", "main"],
                 user=TK_USER, env=build_env,
                 retries=3, retry_delay=5.0
             )
@@ -61,25 +80,28 @@ class StepCloneAndBuild(Step):
                 self._set_status(Status.FAILED)
                 return False
 
+        # Verifica che il sorgente Go sia presente dopo il clone
         try:
-            _src_missing = not src_dir.exists()
+            src_missing = not (home / "go.mod").exists()
         except PermissionError:
-            _src_missing = subprocess.run(
-                ["sudo", "-u", TK_USER, "test", "-d", str(src_dir)],
+            src_missing = subprocess.run(
+                ["sudo", "-u", TK_USER, "test", "-f", str(home / "go.mod")],
                 capture_output=True
             ).returncode != 0
 
-        if not runner.dry_run and _src_missing:
-            runner.log("  ✗ Directory sorgente non trovata, build impossibile")
+        if not runner.dry_run and src_missing:
+            runner.log("  ✗ go.mod non trovato in home — clone fallito?")
             self._set_status(Status.FAILED)
             return False
 
         runner.run(["mkdir", "-p", str(GOBIN)], user=TK_USER)
+        runner.run(["mkdir", "-p", str(GOPATH)], user=TK_USER)
 
+        # --- Build ---
         runner.log("  go build... (può richiedere 5-15 minuti su Pi)")
         build_cmd = (
-            f"cd {shlex.quote(str(src_dir))} && "
-            f"{shlex.quote(str(go_bin))} build -v -trimpath "
+            f"cd {shlex.quote(str(home))} && "
+            f"{shlex.quote(go_bin)} build -v -trimpath "
             f"'-ldflags=-s -w' "
             f"-o {shlex.quote(str(GOBIN / 'doorphoneserver'))} "
             f"./cmd/doorphoneserver"
@@ -88,7 +110,7 @@ class StepCloneAndBuild(Step):
             ["bash", "-c", build_cmd],
             user=TK_USER,
             env=build_env,
-            timeout=None,  # go build può richiedere 15+ minuti su Pi 4
+            timeout=None,
         )
 
         if not ok and not runner.dry_run:
