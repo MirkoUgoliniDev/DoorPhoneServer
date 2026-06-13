@@ -25,6 +25,7 @@ APT_PACKAGES = [
     "libopenal-dev", "libopus-dev", "libasound2-dev", "alsa-utils",
     "git", "ffmpeg", "mplayer", "screen",
     "cron",            # demone crontab: non installato di default su Debian 13 (trixie)
+    "sqlite3",         # estrazione/preservazione certificato server Mumble
     "mumble-server",
     "build-essential", "curl", "wget", "openssl", "ca-certificates",
     "python3-tk", "python3-flask",

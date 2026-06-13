@@ -69,6 +69,30 @@ if [ -n "$CERT_SRC" ] && [ -f "$CERT_SRC" ] && [ -n "$KEY_SRC" ] && [ -f "$KEY_S
     fi
 fi
 
+# Preservazione del certificato esistente (idempotenza): se NON è stato fornito un
+# cert e Murmur ne ha già uno auto-generato nel DB (re-run su un server già attivo),
+# lo estraiamo e lo pinniamo. Così ri-eseguire il wizard NON cambia il certificato
+# e i tablet, che lo hanno "pinnato", non perdono la fiducia. Su una prima
+# installazione il DB non ha ancora un cert: si salta e Murmur ne genera uno.
+MUMBLE_DB=/var/lib/mumble-server/mumble-server.sqlite
+if [ -z "$CERT_SRC" ] && ! grep -q '^sslCert=' /etc/mumble-server.ini \
+   && [ -f "$MUMBLE_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
+    EXIST_CERT="$(sqlite3 "$MUMBLE_DB" "SELECT value FROM config WHERE key='certificate';" 2>/dev/null)"
+    EXIST_KEY="$(sqlite3 "$MUMBLE_DB" "SELECT value FROM config WHERE key='key';" 2>/dev/null)"
+    if printf '%s' "$EXIST_CERT" | grep -q "BEGIN" && printf '%s' "$EXIST_KEY" | grep -q "BEGIN"; then
+        echo "  Certificato esistente nel DB: lo preservo per non cambiarlo ai tablet"
+        mkdir -p /etc/mumble-server
+        printf '%s\n' "$EXIST_CERT" > /etc/mumble-server/cert.pem
+        printf '%s\n' "$EXIST_KEY"  > /etc/mumble-server/key.pem
+        chown mumble-server:mumble-server /etc/mumble-server/cert.pem /etc/mumble-server/key.pem 2>/dev/null
+        chmod 644 /etc/mumble-server/cert.pem
+        chmod 600 /etc/mumble-server/key.pem
+        echo 'sslCert=/etc/mumble-server/cert.pem' >> /etc/mumble-server.ini
+        echo 'sslKey=/etc/mumble-server/key.pem'  >> /etc/mumble-server.ini
+        echo "  ✓ certificato esistente preservato (sslCert/sslKey)"
+    fi
+fi
+
 # Abilita e avvia
 systemctl enable mumble-server 2>/dev/null && echo "  ✓ mumble-server abilitato"
 systemctl restart mumble-server && echo "  ✓ mumble-server avviato" || echo "  ✗ restart mumble-server fallito"
