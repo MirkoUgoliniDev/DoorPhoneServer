@@ -142,6 +142,31 @@ def validate_card_index(value, cards: List[AudioCard]) -> int:
         return 0
 
 
+def get_card_id(index: int) -> Optional[str]:
+    """Ritorna l'ID ALSA (stringa, es. 'Set') della scheda all'indice dato.
+    L'ID è STABILE tra i reboot, a differenza del numero di card che cambia
+    quando l'audio onboard viene disabilitato. None se non determinabile."""
+    try:
+        p = f"/proc/asound/card{index}/id"
+        if os.path.exists(p):
+            with open(p) as f:
+                cid = f.read().strip()
+                if cid:
+                    return cid
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["aplay", "-l"], capture_output=True,
+                             text=True, timeout=5).stdout
+        for line in out.splitlines():
+            m = re.match(r"card\s+(\d+):\s+(\S+)\s+\[", line)
+            if m and int(m.group(1)) == index:
+                return m.group(2)
+    except Exception:
+        pass
+    return None
+
+
 def generate_asound_conf(
     play_card: int, play_dev: int, cap_card: int, cap_dev: int
 ) -> str:
@@ -151,6 +176,14 @@ def generate_asound_conf(
     cd = max(0, min(3, cap_dev))
     play_ch = get_card_channels(pc, pd, stream="playback")
     cap_ch  = get_card_channels(cc, cd, stream="capture")
+
+    # Riferimento per ALSA: usa l'ID stringa (es. card "Set") se disponibile,
+    # così la config resta valida anche dopo il reboot quando bcm2835 sparisce e
+    # la scheda USB viene rinumerata. Fallback all'indice numerico.
+    pc_id = get_card_id(pc)
+    cc_id = get_card_id(cc)
+    pc = f'"{pc_id}"' if pc_id else pc
+    cc = f'"{cc_id}"' if cc_id else cc
 
     return f"""# Generato da DoorPhoneServer Setup Wizard
 pcm.dmixed {{
