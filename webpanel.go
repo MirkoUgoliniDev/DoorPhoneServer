@@ -150,6 +150,8 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/panel/api/esp32/usblog", b.handleESP32USBLog)
 	mux.HandleFunc("/panel/api/esp32/tablet", b.handleESP32Tablet)
 	mux.HandleFunc("/panel/api/esp32/floors", b.handleESP32Floors)
+	mux.HandleFunc("/panel/api/esp32/key-status", b.handleESP32KeyStatus)
+	mux.HandleFunc("/panel/api/esp32/key-gen", b.handleESP32KeyGen)
 	// NFC Whitelist — gestione via protocol coordinato con ESP32
 	mux.HandleFunc("/whitelist", b.handleWhitelistPage)
 	mux.HandleFunc("/api/whitelist", func(w http.ResponseWriter, r *http.Request) {
@@ -4285,4 +4287,60 @@ func (b *DoorPhoneServer) handleESP32Door(w http.ResponseWriter, r *http.Request
 	b.USBBridge.Send("UNLOCK-DOOR\n")
 	log.Printf("[PANEL] ESP32 UNLOCK_DOOR inviato")
 	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+// handleESP32KeyStatus interroga lo stato della chiave AES-128 DESFire sull'ESP32-S3.
+// GET → {"ok":true,"present":bool,"fp":"hex8"|"","re_enroll_needed":bool}
+func (b *DoorPhoneServer) handleESP32KeyStatus(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+		return
+	}
+	present, fp, err := b.USBBridge.KeyStatus()
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"ok":false,"error":%q}`, err.Error())
+		return
+	}
+	reEnroll := IsReEnrollNeeded()
+	fmt.Fprintf(w, `{"ok":true,"present":%v,"fp":%q,"re_enroll_needed":%v}`, present, fp, reEnroll)
+}
+
+// handleESP32KeyGen genera (o rigenera) la chiave AES-128 DESFire sull'ESP32-S3.
+// POST con parametro opzionale "force=true" per KEY-GEN FORCE (invalida tessere esistenti).
+// → {"ok":true,"fp":"hex8"}
+func (b *DoorPhoneServer) handleESP32KeyGen(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+		return
+	}
+	force := r.FormValue("force") == "true"
+	fp, err := b.USBBridge.GenKey(force)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"ok":false,"error":%q}`, err.Error())
+		return
+	}
+	if err := SaveKeyFP(fp); err != nil {
+		log.Printf("[PANEL] key-gen: errore salvataggio FP: %v", err)
+	}
+	if force {
+		if err := SetReEnrollNeeded(true); err != nil {
+			log.Printf("[PANEL] key-gen: errore SetReEnrollNeeded: %v", err)
+		}
+	}
+	log.Printf("[PANEL] key-gen force=%v FP=%s", force, fp)
+	fmt.Fprintf(w, `{"ok":true,"fp":%q}`, fp)
 }

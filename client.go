@@ -170,16 +170,23 @@ func Init(file string, ServerIndex string) {
 		usbBridge.SetNFCManager(b.NFCWhitelist)
 
 		// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
+		// e riconcilia la chiave AES DESFire (EnsureKey).
 		go func() {
 			time.Sleep(8 * time.Second)
 			tags, err := usbBridge.SendTagList(5 * time.Second)
 			if err != nil {
 				log.Printf("[NFC] sync avvio fallita: %v", err)
+			} else {
+				result := b.NFCWhitelist.SyncFromESP32(tags)
+				log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
+					result["esp32_count"], result["json_count"], result["in_sync"])
+			}
+			fp, err := usbBridge.EnsureKey()
+			if err != nil {
+				log.Printf("[NFC] EnsureKey fallita: %v", err)
 				return
 			}
-			result := b.NFCWhitelist.SyncFromESP32(tags)
-			log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
-				result["esp32_count"], result["json_count"], result["in_sync"])
+			log.Printf("[NFC] chiave AES pronta, FP=%s re_enroll=%v", fp, IsReEnrollNeeded())
 		}()
 	} else {
 		log.Printf("info: IO backend = RPi — ESP32/USB/NFC disabilitati")

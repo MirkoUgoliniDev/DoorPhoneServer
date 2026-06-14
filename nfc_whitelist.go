@@ -349,6 +349,9 @@ func (m *NFCWhitelistManager) HandleEnrollFail(line string) {
 	msg := "Enrollment fallito"
 	upper := strings.ToUpper(line)
 	switch {
+	case strings.Contains(upper, "NO-KEY"):
+		code = "no-key"
+		msg = "Genera prima la chiave (KEY-GEN)"
 	case strings.Contains(upper, "ALREADY"):
 		code = "already-enrolled"
 		msg = "Tag già registrato nella NVS"
@@ -412,8 +415,11 @@ func (m *NFCWhitelistManager) HandleFormatFail(code string) {
 	}
 
 	msg := "Inizializzazione tag fallita"
-	if code == "not-desfire" {
+	switch code {
+	case "not-desfire":
 		msg = "Il tag non è DESFire"
+	case "no-key":
+		msg = "Genera prima la chiave (KEY-GEN)"
 	}
 
 	select {

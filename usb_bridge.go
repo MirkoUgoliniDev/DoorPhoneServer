@@ -580,6 +580,11 @@ func (b *USBBridge) dispatch(line string) {
 			b.nfcMgr.HandleFormatFail("not-desfire")
 		}
 
+	case strings.HasPrefix(line, "TAG-FORMAT-FAIL NO-KEY"):
+		if b.nfcMgr != nil {
+			b.nfcMgr.HandleFormatFail("no-key")
+		}
+
 	case strings.HasPrefix(line, "TAG-FORMAT-FAIL"):
 		if b.nfcMgr != nil {
 			b.nfcMgr.HandleFormatFail("format-fail")
@@ -619,6 +624,12 @@ func (b *USBBridge) dispatch(line string) {
 		if len(parts) == 3 {
 			b.signalPending("ACK-FLOOR-"+parts[2], "OK")
 		}
+
+	case strings.HasPrefix(line, "KEY-STATUS"):
+		b.signalPending("KEY-STATUS", line)
+
+	case strings.HasPrefix(line, "KEY-GEN"):
+		b.signalPending("KEY-GEN", line)
 
 	case strings.HasPrefix(line, "ACK "):
 		// conferma output GPIO eseguito
@@ -838,4 +849,85 @@ func (b *USBBridge) pingLoop(ctx context.Context) {
 			b.Send("PING\n")
 		}
 	}
+}
+
+// KeyStatus interroga lo stato della chiave AES-128 DESFire sull'ESP32-S3.
+// Ritorna (false, "", nil) se EMPTY, (true, "<hex8>", nil) se PRESENT.
+func (b *USBBridge) KeyStatus() (present bool, fp string, err error) {
+	resp, ok := b.SendAndWait("KEY-STATUS\n", "KEY-STATUS", 3*time.Second)
+	if !ok {
+		return false, "", fmt.Errorf("KEY-STATUS: timeout o ESP32 non disponibile")
+	}
+	if resp == "KEY-STATUS EMPTY" {
+		return false, "", nil
+	}
+	if strings.HasPrefix(resp, "KEY-STATUS PRESENT FP:") {
+		return true, strings.TrimPrefix(resp, "KEY-STATUS PRESENT FP:"), nil
+	}
+	return false, "", fmt.Errorf("KEY-STATUS: risposta inattesa %q", resp)
+}
+
+// GenKey genera la chiave AES-128 DESFire sull'ESP32-S3.
+// force=true invia KEY-GEN FORCE (rigenera sempre, invalida tessere esistenti).
+// Ritorna il fingerprint (8 hex char = SHA-256[:4] della chiave) sia per KEY-GEN-OK che KEY-GEN-EXISTS.
+func (b *USBBridge) GenKey(force bool) (string, error) {
+	cmd := "KEY-GEN\n"
+	if force {
+		cmd = "KEY-GEN FORCE\n"
+	}
+	resp, ok := b.SendAndWait(cmd, "KEY-GEN", 3*time.Second)
+	if !ok {
+		return "", fmt.Errorf("KEY-GEN: timeout o ESP32 non disponibile")
+	}
+	if strings.HasPrefix(resp, "KEY-GEN-OK FP:") {
+		return strings.TrimPrefix(resp, "KEY-GEN-OK FP:"), nil
+	}
+	if strings.HasPrefix(resp, "KEY-GEN-EXISTS FP:") {
+		return strings.TrimPrefix(resp, "KEY-GEN-EXISTS FP:"), nil
+	}
+	return "", fmt.Errorf("KEY-GEN: risposta inattesa %q", resp)
+}
+
+// EnsureKey riconcilia lo stato della chiave AES all'avvio:
+// genera se assente, confronta il FP salvato e segnala re-enroll se la chiave è cambiata.
+func (b *USBBridge) EnsureKey() (string, error) {
+	present, fp, err := b.KeyStatus()
+	if err != nil {
+		return "", err
+	}
+
+	if !present {
+		fp, err = b.GenKey(false)
+		if err != nil {
+			return "", err
+		}
+		if err := SaveKeyFP(fp); err != nil {
+			log.Printf("[USB] EnsureKey: errore salvataggio FP: %v", err)
+		}
+		if err := SetReEnrollNeeded(true); err != nil {
+			log.Printf("[USB] EnsureKey: errore SetReEnrollNeeded: %v", err)
+		}
+		log.Printf("[USB] EnsureKey: chiave generata, FP=%s — re-enroll necessario", fp)
+		return fp, nil
+	}
+
+	saved, ok := GetKeyFP()
+	switch {
+	case !ok:
+		if err := SaveKeyFP(fp); err != nil {
+			log.Printf("[USB] EnsureKey: errore salvataggio FP: %v", err)
+		}
+		log.Printf("[USB] EnsureKey: primo avvio con chiave presente, FP=%s salvato", fp)
+	case saved != fp:
+		if err := SaveKeyFP(fp); err != nil {
+			log.Printf("[USB] EnsureKey: errore salvataggio FP: %v", err)
+		}
+		if err := SetReEnrollNeeded(true); err != nil {
+			log.Printf("[USB] EnsureKey: errore SetReEnrollNeeded: %v", err)
+		}
+		log.Printf("[USB] EnsureKey: FP cambiato (%s→%s) — re-enroll necessario", saved, fp)
+	default:
+		log.Printf("[USB] EnsureKey: chiave OK, FP=%s invariato", fp)
+	}
+	return fp, nil
 }
