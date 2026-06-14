@@ -152,6 +152,7 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/panel/api/esp32/floors", b.handleESP32Floors)
 	mux.HandleFunc("/panel/api/esp32/key-status", b.handleESP32KeyStatus)
 	mux.HandleFunc("/panel/api/esp32/key-gen", b.handleESP32KeyGen)
+	mux.HandleFunc("/panel/api/esp32/key-reenroll-ack", b.handleESP32KeyReEnrollAck)
 	// NFC Whitelist — gestione via protocol coordinato con ESP32
 	mux.HandleFunc("/whitelist", b.handleWhitelistPage)
 	mux.HandleFunc("/api/whitelist", func(w http.ResponseWriter, r *http.Request) {
@@ -4343,4 +4344,23 @@ func (b *DoorPhoneServer) handleESP32KeyGen(w http.ResponseWriter, r *http.Reque
 	}
 	log.Printf("[PANEL] key-gen force=%v FP=%s", force, fp)
 	fmt.Fprintf(w, `{"ok":true,"fp":%q}`, fp)
+}
+
+// handleESP32KeyReEnrollAck azzera il flag re_enroll_needed dopo che l'operatore
+// ha completato il re-enroll di tutte le tessere.
+// POST → {"ok":true}
+func (b *DoorPhoneServer) handleESP32KeyReEnrollAck(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := SetReEnrollNeeded(false); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"ok":false,"error":%q}`, err.Error())
+		return
+	}
+	log.Printf("[PANEL] re_enroll_needed azzerato dall'operatore")
+	fmt.Fprintf(w, `{"ok":true}`)
 }

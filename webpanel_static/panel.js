@@ -2264,6 +2264,7 @@ function pollESP32(){
         if(inp&&document.activeElement!==inp)inp.value=slots[si]||'';
       });
     });
+    if(d.connected)pollKeyStatus();
   }).catch(()=>{});
 }
 
@@ -2343,4 +2344,89 @@ function esp32Door(){
     .then(r=>r.json())
     .then(d=>toastCenter(d.ok?'Portone aperto':(d.error||'Errore invio comando'),d.ok))
     .catch(()=>toastCenter('Errore di rete',false));
+}
+
+function updateKeyUI(d){
+  const dot=document.getElementById('keyStatusDot');
+  const lbl=document.getElementById('keyStatusLabel');
+  const fp=document.getElementById('keyFP');
+  const btnGen=document.getElementById('btnKeyGen');
+  const btnForce=document.getElementById('btnKeyGenForce');
+  const banner=document.getElementById('keyReEnrollBanner');
+  if(!dot)return;
+  if(d.present){
+    dot.style.background='var(--green)';
+    lbl.textContent='Presente';
+    lbl.style.color='var(--green)';
+    fp.textContent=(d.fp||'—').toUpperCase();
+    if(btnGen)btnGen.style.display='none';
+    if(btnForce)btnForce.style.display='';
+  } else {
+    dot.style.background='var(--red)';
+    lbl.textContent='Assente';
+    lbl.style.color='var(--red)';
+    fp.textContent='—';
+    if(btnGen)btnGen.style.display='';
+    if(btnForce)btnForce.style.display='none';
+  }
+  if(banner)banner.style.display=d.re_enroll_needed?'flex':'none';
+}
+
+function pollKeyStatus(){
+  fetch('/panel/api/esp32/key-status')
+    .then(r=>r.json())
+    .then(d=>{if(d.ok)updateKeyUI(d);})
+    .catch(()=>{});
+}
+
+function esp32KeyGen(force){
+  const doGen=()=>{
+    fetch('/panel/api/esp32/key-gen',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'force='+(force?'true':'false')
+    })
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        toastCenter('Chiave '+(force?'rigenerata':'generata')+' — FP: '+(d.fp||'').toUpperCase(),true);
+        pollKeyStatus();
+      } else {
+        toastCenter(d.error||'Errore generazione chiave',false);
+      }
+    })
+    .catch(()=>toastCenter('Errore di rete',false));
+  };
+  if(force){
+    confirmModal(
+      'Rigenera chiave AES',
+      'Questa operazione genera una nuova chiave e <strong>invalida tutte le tessere</strong> già registrate. Dovrai re-enrollare ogni tessera.',
+      'danger','danger','Rigenera'
+    ).then(ok=>{if(ok)doGen();}).catch(()=>{});
+  } else {
+    doGen();
+  }
+}
+
+function esp32KeyGenForce(){esp32KeyGen(true);}
+
+function esp32KeyAckReEnroll(){
+  confirmModal(
+    'Conferma re-enroll completato',
+    'Hai ri-enrollato <strong>tutte</strong> le tessere con la nuova chiave?',
+    'warn','primary','Sì, conferma'
+  ).then(ok=>{
+    if(!ok)return;
+    fetch('/panel/api/esp32/key-reenroll-ack',{method:'POST'})
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.ok){
+          toastCenter('Re-enroll confermato',true);
+          pollKeyStatus();
+        } else {
+          toastCenter(d.error||'Errore',false);
+        }
+      })
+      .catch(()=>toastCenter('Errore di rete',false));
+  }).catch(()=>{});
 }
