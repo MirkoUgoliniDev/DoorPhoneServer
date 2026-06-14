@@ -53,7 +53,13 @@ class Runner:
         # -n (non-interattivo): sudo non chiede mai la password. Se non è
         # configurato il NOPASSWD, fallisce subito invece di bloccare il
         # terminale in attesa di input (il wizard gira spesso dal browser).
-        if user and os.geteuid() != 0:
+        # Se è richiesto un 'user', forza SEMPRE lo switch — anche quando il
+        # wizard gira come root (caso tipico dal browser). Altrimenti il
+        # parametro verrebbe ignorato e il comando girerebbe come root: p.es.
+        # `crontab -` finirebbe nella crontab di root invece che in quella di
+        # doorphoneserver, e il pannello mostrerebbe "Nessun job crontab".
+        # Da root, sudo non richiede password; da non-root serve il NOPASSWD.
+        if user:
             cmd_list = ["sudo", "-n", "-E", "-H", "-u", user] + cmd_list
         elif sudo and os.geteuid() != 0:
             cmd_list = ["sudo", "-n"] + cmd_list

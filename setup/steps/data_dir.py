@@ -1,9 +1,26 @@
 """Passo 10 — Directory preferences e certificato TLS."""
 
 import re
+import socket
 from pathlib import Path
 from lib.step_base import Step, Status
 from lib.constants import TK_USER, TK_GROUP, REPO_ROOT
+
+
+def _detect_local_ip():
+    """IP LAN del Pi (interfaccia usata per uscire in rete). None se non rilevabile.
+
+    Usa un socket UDP verso un indirizzo esterno: non invia pacchetti, serve
+    solo a far scegliere al kernel l'interfaccia/IP locale corretto.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
 
 
 class StepDataDir(Step):
@@ -102,6 +119,24 @@ class StepDataDir(Step):
                 content = re.sub(r'<certificate\s*/>', f'<certificate>{cert_path}</certificate>', content)
                 content = re.sub(r'<certificate>[^<]*</certificate>', f'<certificate>{cert_path}</certificate>', content)
                 runner.log(f"  ✓ XML certificate → {cert_path}")
+
+                # --- serverandport: punta al Pi corrente (server Mumble locale) ---
+                # Il config del repo contiene un IP fisso del Pi su cui era stato
+                # creato. Riscrivo l'host con l'IP LAN di QUESTO Pi, preservando la
+                # porta, così il client Mumble si connette al server locale senza
+                # modifiche manuali.
+                local_ip = _detect_local_ip()
+                if local_ip:
+                    def _repl(m):
+                        inner = m.group(1).strip()
+                        port = inner.split(":", 1)[1] if ":" in inner else "64738"
+                        return f"<serverandport>{local_ip}:{port}</serverandport>"
+                    content, n = re.subn(r'<serverandport>([^<]*)</serverandport>', _repl, content)
+                    if n:
+                        runner.log(f"  ✓ XML serverandport → {local_ip}")
+                else:
+                    runner.log("  ⚠ IP LAN non rilevato — serverandport lasciato invariato")
+
                 runner.write(xml_dst, content, sudo=True)
                 runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(xml_dst)], sudo=True)
         else:

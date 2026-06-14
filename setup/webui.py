@@ -157,6 +157,12 @@ HTML = r"""<!DOCTYPE html>
   }
   .card-done    { border-color:var(--success) !important; }
   .card-failed  { border-color:var(--error) !important; }
+  /* Collasso dei blocchi: quando .collapsed è attivo resta solo l'header */
+  .step-head { cursor:pointer; user-select:none; }
+  .step-chevron { display:inline-block; transition:transform .2s; color:var(--muted); flex-shrink:0; font-size:.8rem; }
+  .card.collapsed .step-chevron { transform:rotate(-90deg); }
+  .card.collapsed .step-config { display:none !important; }
+  .card.collapsed [id^="card-log-"] { display:none !important; }
   .progress-bar { transition:width .4s ease; }
   @keyframes badge-pulse {
     0%,100% { opacity:1; box-shadow:0 0 0 0 var(--run); }
@@ -313,8 +319,8 @@ HTML = r"""<!DOCTYPE html>
     {% for s in steps %}
     <div id="step-card-{{ loop.index0 }}" class="card p-4 flex flex-col gap-0">
 
-      <!-- Header always visible -->
-      <div class="flex items-center gap-3">
+      <!-- Header always visible — click per collassare/espandere il blocco -->
+      <div class="flex items-center gap-3 step-head" onclick="toggleStepCard({{ loop.index0 }}, event)" title="Clicca per espandere/collassare">
         <span id="icon-{{ loop.index0 }}" style="color:var(--muted);font-size:1.1rem;width:1.5rem;text-align:center;flex-shrink:0">{{ s.icon }}</span>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
@@ -325,11 +331,12 @@ HTML = r"""<!DOCTYPE html>
           <p class="text-xs mt-0.5 truncate" style="color:var(--muted)" title="{{ s.description }}">{{ s.description }}</p>
         </div>
         {% if s.name in step_help %}
-        <button data-stepname="{{ s.name }}" onclick="openStepHelp(this.dataset.stepname)" title="Dettagli passo"
+        <button data-stepname="{{ s.name }}" onclick="event.stopPropagation();openStepHelp(this.dataset.stepname)" title="Dettagli passo"
           style="flex-shrink:0;width:1.6rem;height:1.6rem;border-radius:50%;border:1.5px solid #cba6f7;background:#1e1e2e;color:#cba6f7;font-size:.72rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,box-shadow .15s"
           onmouseover="this.style.background='#cba6f7';this.style.color='#1e1e2e';this.style.boxShadow='0 0 8px #cba6f780'"
           onmouseout="this.style.background='#1e1e2e';this.style.color='#cba6f7';this.style.boxShadow='none'">i</button>
         {% endif %}
+        <span class="step-chevron">▾</span>
       </div>
 
       <!-- Config section (solo per step configurabili) -->
@@ -469,6 +476,7 @@ HTML = r"""<!DOCTYPE html>
         <div class="col-span-2 mt-1 flex gap-2 flex-wrap" style="grid-column:1/-1">
           <button onclick="refreshCards(this)" class="btn-primary" style="background:#45475a;color:#cdd6f4;font-size:.85rem;padding:.4rem 1.1rem">↺ Aggiorna schede</button>
           <button id="testAudioBtn" onclick="openAudioModal()" class="btn-primary" style="background:#cba6f7;color:#1e1e2e;font-size:.85rem;padding:.4rem 1.1rem">🔊 Test Audio &amp; Volumi</button>
+          <button id="audioResumeBtn" onclick="resumeAudio()" class="btn-primary" style="display:none;font-size:.9rem;padding:.4rem 1.2rem;background:var(--success);color:#1e1e2e">▶ Prosegui</button>
         </div>
       </div>
 
@@ -896,6 +904,14 @@ function setProgress(idx, total) {
   document.getElementById('progressPct').textContent = pct + '%';
 }
 
+// Espande/collassa un blocco al click sull'header. Ignora i click sui bottoni
+// interni (es. tasto "i" dei dettagli) per non interferire.
+function toggleStepCard(idx, event) {
+  if (event && event.target.closest('button')) return;
+  const card = document.getElementById('step-card-' + idx);
+  if (card) card.classList.toggle('collapsed');
+}
+
 function startInstall() {
   const cfg = {
     hostname:           document.getElementById('hostname').value,
@@ -961,13 +977,16 @@ function startInstall() {
           if (ev.status === 'RUNNING') {
             currentStepIdx = ev.idx;
             card.classList.add('card-running');
+            card.classList.remove('collapsed');           // espandi il blocco attivo
             const logDiv = document.getElementById('card-log-' + ev.idx);
             if (logDiv) logDiv.style.display = '';
             card.scrollIntoView({behavior:'smooth', block:'start'});
           } else if (ev.status === 'DONE' || ev.status === 'SKIPPED') {
             card.classList.add('card-done');
+            card.classList.add('collapsed');              // collassa appena completato
           } else if (ev.status === 'FAILED') {
             card.classList.add('card-failed');
+            card.classList.remove('collapsed');           // tieni aperto: mostra l'errore
           }
         }
         const done = ['DONE','SKIPPED'].includes(ev.status);
@@ -993,6 +1012,18 @@ function startInstall() {
         const credCard = [...document.querySelectorAll('.font-semibold.text-sm')]
           .find(el => el.textContent.trim() === 'Credenziali .env');
         if (credCard) credCard.closest('.card')?.scrollIntoView({behavior:'smooth', block:'center'});
+      } else if (ev.type === 'pause_audio') {
+        // Riabilita la sezione config per testare l'audio e scegliere le schede
+        document.getElementById('configSection').style.opacity = '1';
+        document.getElementById('configSection').style.pointerEvents = '';
+        document.getElementById('audioResumeBtn').style.display = '';
+        document.getElementById('statusText').textContent = '⏸ Testa l\'audio, seleziona le schede e clicca Prosegui';
+        document.getElementById('statusText').style.color = 'var(--warn)';
+        // alsa-utils è ora installato: rileva le schede reali
+        try { refreshCards(); } catch (e) {}
+        const audCard = [...document.querySelectorAll('.font-semibold.text-sm')]
+          .find(el => el.textContent.trim() === 'Configurazione Audio');
+        if (audCard) audCard.closest('.card')?.scrollIntoView({behavior:'smooth', block:'center'});
       } else if (ev.type === 'aborted') {
         evtSource.close();
         currentStepIdx = -1;
@@ -1032,6 +1063,33 @@ function resumeInstall() {
       document.getElementById('statusText').style.color = 'var(--run)';
     }
   });
+}
+
+function resumeAudio() {
+  const btn = document.getElementById('audioResumeBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Invio...';
+  fetch('/resume', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      play_card: parseInt(document.getElementById('playCard').value) || 0,
+      cap_card:  parseInt(document.getElementById('capCard').value)  || 0,
+    }),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      btn.style.display = 'none';
+      btn.disabled = false;
+      btn.textContent = '▶ Prosegui';
+      document.getElementById('configSection').style.opacity = '0.5';
+      document.getElementById('configSection').style.pointerEvents = 'none';
+      document.getElementById('statusText').textContent = 'Installazione in corso...';
+      document.getElementById('statusText').style.color = 'var(--run)';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '▶ Prosegui';
+    }
+  }).catch(() => { btn.disabled = false; btn.textContent = '▶ Prosegui'; });
 }
 
 function abortInstall() {
@@ -1882,6 +1940,29 @@ def start():
                         break
                     config.update(_pause_data)
                     _log_cb("  ▶ Credenziali ricevute, continuo...")
+
+                # Pausa interattiva audio: alsa-utils è ora installato, quindi
+                # l'utente può testare le schede sul sistema reale e scegliere
+                # quella corretta PRIMA che lo step scriva asound.conf e l'XML.
+                # Evita che un autodetect sbagliato finisca in produzione.
+                if step.name == "Configurazione Audio" and not runner.dry_run:
+                    _pause_event.clear()
+                    _broadcast({"type": "pause_audio", "idx": i, "name": step.name})
+                    _log_cb("  ⏸ In attesa del test audio e della scelta scheda...")
+                    while not _pause_event.wait(timeout=1.0):
+                        if _abort_event.is_set():
+                            break
+                    if _abort_event.is_set():
+                        _broadcast({"type": "aborted"})
+                        break
+                    if _pause_data.get("play_card") is not None:
+                        config["play_card"] = int(_pause_data["play_card"])
+                        config["cap_card"]  = int(_pause_data.get("cap_card", _pause_data["play_card"]))
+                        config["_audio_autodetect"] = False
+                        _log_cb(
+                            f"  ▶ Schede confermate dall'utente: "
+                            f"output card {config['play_card']}, input card {config['cap_card']}"
+                        )
 
                 _log_cb(f"\n► Passo {i+1}/{len(steps)}: {step.name}")
                 try:

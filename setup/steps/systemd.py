@@ -47,7 +47,21 @@ class StepSystemdService(Step):
                 runner.run(["rm", "-f", str(sudoers)], sudo=True)
 
         runner.run(["systemctl", "daemon-reload"], sudo=True)
-        runner.run(["systemctl", "enable", "doorphoneserver"], sudo=True)
+        # enable --now: abilita al boot E avvia subito, così il pannello è
+        # raggiungibile sulla 8080 a fine setup senza riavvio o start manuale.
+        # Il binario è già compilato (StepCloneAndBuild gira prima di questo step).
+        runner.run(["systemctl", "enable", "--now", "doorphoneserver"], sudo=True)
+        if not runner.dry_run:
+            ok, _ = runner.run(
+                ["systemctl", "is-active", "--quiet", "doorphoneserver"]
+            )
+            if ok:
+                runner.log("  ✓ doorphoneserver avviato (attivo sulla 8080)")
+            else:
+                runner.log(
+                    "  ✗ doorphoneserver non risulta attivo — "
+                    "controlla: journalctl -u doorphoneserver -n 50"
+                )
 
         # --- Ambiente sviluppo: GOBIN e PATH in ~/.bashrc ---
         # Permette all'utente doorphoneserver di usare `go build`, `go run` ecc.
@@ -82,8 +96,19 @@ class StepSystemdService(Step):
         runner.run(["systemctl", "enable", "--now", "cron"], sudo=True)
         cron_script = REPO_ROOT / "setup" / "scripts" / "setup_crontab.sh"
         if cron_script.exists():
-            runner.run(["bash", str(cron_script)], user=TK_USER)
-            runner.log("  ✓ Crontab installato")
+            # Eseguito come root passando l'utente target: lo script usa
+            # `crontab -u TK_USER`, così i job finiscono nella crontab letta
+            # dal pannello (che gira come TK_USER), non in quella di root.
+            ok, _ = runner.run(
+                ["bash", str(cron_script), TK_USER], sudo=True
+            )
+            if ok:
+                runner.log("  ✓ Crontab installato")
+            else:
+                runner.log(
+                    "  ✗ Crontab NON installato — verifica: "
+                    f"sudo crontab -u {TK_USER} -l"
+                )
         else:
             runner.log("  ⚠ setup_crontab.sh non trovato, crontab non installato")
 

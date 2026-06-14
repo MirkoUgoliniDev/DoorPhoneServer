@@ -10,6 +10,7 @@ from steps.mumble       import StepMumbleServer
 from steps.boot_config  import StepBootConfig
 from steps.clone_build  import StepCloneAndBuild
 from steps.data_dir     import StepDataDir
+from steps.udev_esp32    import StepUdevESP32
 from steps.systemd      import StepSystemdService
 from steps.log2ram      import StepLog2Ram
 from steps.env_config   import StepEnvConfig
@@ -32,6 +33,7 @@ def build_steps() -> List[Step]:
         StepBootConfig(),
         StepCloneAndBuild(),
         StepDataDir(),
+        StepUdevESP32(),
         StepSystemdService(),
         StepLog2Ram(),
         StepCleanup(),

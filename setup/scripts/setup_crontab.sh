@@ -1,6 +1,9 @@
 #!/bin/bash
 # Installa i job crontab di sistema per doorphoneserver.
-# Eseguire come utente doorphoneserver (o con: sudo -u doorphoneserver bash setup_crontab.sh)
+#
+# Uso:
+#   come root:            bash setup_crontab.sh [utente]   (default: doorphoneserver)
+#   come doorphoneserver: bash setup_crontab.sh            (installa nella propria crontab)
 #
 # Job installati:
 #   59 23 * * *  Riavvio Pi a mezzanotte meno 1
@@ -11,10 +14,12 @@
 #
 # NOTA: usa "sudo systemctl reboot" — coperto dal sudoers doorphoneserver-panel
 #       (/usr/bin/systemctl NOPASSWD), NON shutdown che richiederebbe sudoers separato.
+set -euo pipefail
 
+TARGET_USER="${1:-doorphoneserver}"
 SCRIPTS_DIR="/home/doorphoneserver/setup/scripts"
 
-crontab - << CRON
+CRON_CONTENT="$(cat << CRON
 # DoorPhoneServer — crontab gestito da setup_crontab.sh
 # Riavvii programmati del Raspberry Pi
 59 23 * * * sudo systemctl reboot
@@ -27,6 +32,19 @@ crontab - << CRON
 # Restart mumble-server ogni ora — abilitare se necessario
 # 0 * * * * sudo systemctl restart mumble-server
 CRON
+)"
 
-echo "Crontab installato:"
-crontab -l
+if [ "$(id -u)" -eq 0 ]; then
+    # Eseguito come root: scrivi SEMPRE nella crontab dell'utente target,
+    # mai in quella di root (è il pannello, che gira come $TARGET_USER, a
+    # leggerla). Senza '-u' i job finirebbero nella crontab sbagliata e il
+    # pannello mostrerebbe "Nessun job crontab trovato".
+    printf '%s\n' "$CRON_CONTENT" | crontab -u "$TARGET_USER" -
+    echo "Crontab installato per $TARGET_USER:"
+    crontab -u "$TARGET_USER" -l
+else
+    # Eseguito come utente normale: installa nella propria crontab.
+    printf '%s\n' "$CRON_CONTENT" | crontab -
+    echo "Crontab installato per $(id -un):"
+    crontab -l
+fi

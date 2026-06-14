@@ -51,7 +51,7 @@ Unica dipendenza nuova. Zero librerie NFC, zero crypto sul Pi.
 ### 3.1 Schema generale
 
 ```
-/dev/gpio-esp32  (USB CDC ACM, 115200 baud)
+/dev/esp32  (USB CDC ACM, 115200 baud)
         │
         │  righe di testo terminate da \n
         ▼
@@ -295,10 +295,14 @@ I controlli vengono disabilitati automaticamente quando il device non è conness
 
 ## 7. Regola udev
 
+> Installata automaticamente dal setup (`StepUdevESP32` → `setup/steps/udev_esp32.py`).
+> Il symlink **deve** chiamarsi `esp32`: il binario apre `/dev/esp32`
+> (vedi `usb_bridge.go`, `usbSerialPath`).
+
 ```udev
-# /etc/udev/rules.d/99-gpio-esp32.rules
+# /etc/udev/rules.d/99-esp32.rules
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
-    SYMLINK+="gpio-esp32", MODE="0660", GROUP="dialout"
+    SYMLINK+="esp32", MODE="0660", GROUP="dialout"
 ```
 
 Applicare:
@@ -310,7 +314,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 Verificare:
 
 ```bash
-ls -la /dev/gpio-esp32   # deve esistere quando ESP32-S3 è collegato
+ls -la /dev/esp32   # deve esistere quando ESP32-S3 è collegato
 ```
 
 ---
@@ -322,7 +326,7 @@ ls -la /dev/gpio-esp32   # deve esistere quando ESP32-S3 è collegato
 - [x] `gpio_usb.go`: consumer GPIOEvent (debug mode — solo log)
 - [x] `smartcard.go`: consumer CardEvent (debug mode — solo log)
 - [x] Pannello web tab ESP32
-- [ ] Regola udev `/dev/gpio-esp32`
+- [x] Regola udev `/dev/esp32` (installata da `StepUdevESP32`)
 - [ ] Test integrazione con firmware Fase 1
 
 ### Fase 4 — Produzione
