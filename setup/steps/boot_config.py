@@ -8,7 +8,7 @@ class StepBootConfig(Step):
     def __init__(self):
         super().__init__(
             "Config Boot RPi",
-            "Esegue setup_configs.sh: audio ALSA, OpenAL, blacklist WiFi, boot/config.txt"
+            "Esegue setup_configs.sh: OpenAL, blacklist WiFi, boot/config.txt (BT off, headless)"
         )
 
     def execute(self, runner, sysinfo, config):

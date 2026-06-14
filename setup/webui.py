@@ -596,7 +596,7 @@ HTML = r"""<!DOCTYPE html>
           <div class="text-xs" style="color:#cdd6f4">› Configura ALSA <span style="font-family:monospace;color:var(--muted)">(/etc/asound.conf)</span> con le schede selezionate</div>
           <div class="text-xs" style="color:#cdd6f4">› Configura OpenAL <span style="font-family:monospace;color:var(--muted)">(/etc/openal/alsoft.conf)</span></div>
           <div class="text-xs" style="color:#cdd6f4">› Blacklist moduli WiFi inutilizzati</div>
-          <div class="text-xs" style="color:#cdd6f4">› Aggiorna <span style="font-family:monospace;color:var(--muted)">{{ sysinfo.boot_config }}</span> (GPU mem, audio, overlay)</div>
+          <div class="text-xs" style="color:#cdd6f4">› Aggiorna <span style="font-family:monospace;color:var(--muted)">{{ sysinfo.boot_config }}</span> (GPU mem, Bluetooth off, headless — audio onboard lasciato attivo)</div>
         </div>
       </div>
 
