@@ -715,10 +715,10 @@ func (b *DoorPhoneServer) handleSoundPlayPi(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// unmute speaker (card 1 = C-Media USB audio)
+	// unmute uscita audio (controllo/scheda risolti dall'XML, non più hardcoded)
 	if !IsAudioCardPresent() {
 		log.Printf("warn: No audio card detected — skipping unmute for audio test")
-	} else if err := exec.Command("amixer", "-c", "1", "sset", "Headphone", "unmute").Run(); err != nil {
+	} else if _, err := runAmixer("Headphone", "sset", "unmute"); err != nil {
 		log.Printf("error: Failed to unmute speaker: %v", err)
 	}
 
@@ -1115,7 +1115,7 @@ func (b *DoorPhoneServer) handleVolume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		out, amixErr := exec.Command("amixer", "sset", control, fmt.Sprintf("%d%%", vol)).CombinedOutput()
+		out, amixErr := runAmixer(control, "sset", fmt.Sprintf("%d%%", vol))
 		okVal := amixErr == nil
 		outStr := strings.TrimSpace(string(out))
 		if outStr == "" {
@@ -1134,11 +1134,99 @@ func (b *DoorPhoneServer) handleVolume(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
+// resolveMixerControl traduce il nome logico usato dal pannello ("Headphone"
+// per l'uscita, "Mic" per l'ingresso) nel controllo mixer reale. L'uscita usa il
+// controllo configurato nell'XML (outputvolcontroldevice), scritto dal setup in
+// base alla scheda scelta dall'operatore (es. "PCM"/"Speaker"). L'ingresso non ha
+// un campo dedicato: prova i nomi di cattura più comuni.
+func resolveMixerControl(logical string) string {
+	switch logical {
+	case "Headphone":
+		if c := Config.Global.Software.Settings.OutputVolControlDevice; c != "" {
+			return c
+		}
+	case "Mic":
+		for _, name := range []string{"Mic", "Capture", "Mic Capture"} {
+			if alsaCardForControl(name) >= 0 {
+				return name
+			}
+		}
+	}
+	return logical
+}
+
+// alsaCardForControl ritorna l'indice della prima scheda ALSA che possiede il
+// controllo mixer indicato, oppure -1. Rende i comandi amixer indipendenti dal
+// numero di scheda (che cambia tra installazioni diverse o dopo il reboot).
+func alsaCardForControl(control string) int {
+	for c := 0; c < 8; c++ {
+		out, err := exec.Command("amixer", "-c", strconv.Itoa(c), "scontrols").Output()
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(out), "'"+control+"'") {
+			return c
+		}
+	}
+	return -1
+}
+
+// firstMixerControl ritorna (controllo, scheda) del primo controllo mixer con la
+// capacità richiesta ("pvolume" = playback, "cvolume" = capture) tra le schede.
+// Serve da fallback quando il controllo configurato nell'XML non esiste su questo
+// hardware, così il pannello resta funzionante senza regressioni.
+func firstMixerControl(capToken string) (string, int) {
+	for c := 0; c < 8; c++ {
+		out, err := exec.Command("amixer", "-c", strconv.Itoa(c), "scontents").Output()
+		if err != nil {
+			continue
+		}
+		var cur string
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Simple mixer control '") {
+				s := strings.TrimPrefix(line, "Simple mixer control '")
+				if i := strings.Index(s, "'"); i >= 0 {
+					cur = s[:i]
+				}
+			} else if cur != "" && strings.HasPrefix(line, "Capabilities:") && strings.Contains(line, capToken) {
+				return cur, c
+			}
+		}
+	}
+	return "", -1
+}
+
+// runAmixer esegue amixer sul controllo logico, risolvendolo nel controllo reale
+// (dall'XML) e agganciando con -c la scheda che effettivamente lo possiede. Se il
+// controllo configurato non esiste su nessuna scheda, ripiega sul primo controllo
+// reale con la capacità adeguata: il pannello funziona anche con XML non combaciante.
+func runAmixer(logical, verb string, rest ...string) ([]byte, error) {
+	ctrl := resolveMixerControl(logical)
+	card := alsaCardForControl(ctrl)
+	if card < 0 {
+		capToken := "pvolume"
+		if logical == "Mic" {
+			capToken = "cvolume"
+		}
+		if fc, fcard := firstMixerControl(capToken); fcard >= 0 {
+			ctrl, card = fc, fcard
+		}
+	}
+	args := []string{}
+	if card >= 0 {
+		args = append(args, "-c", strconv.Itoa(card))
+	}
+	args = append(args, verb, ctrl)
+	args = append(args, rest...)
+	return exec.Command("amixer", args...).CombinedOutput()
+}
+
 // getAlsaMute verifica se il controllo audio ALSA specificato è in stato muto.
 // @param control nome del controllo ALSA (es. "Headphone", "Mic")
 // @return true se il controllo è mutato, false altrimenti
 func getAlsaMute(control string) bool {
-	out, err := exec.Command("amixer", "sget", control).Output()
+	out, err := runAmixer(control, "sget")
 	if err != nil {
 		return false
 	}
@@ -1162,7 +1250,7 @@ func (b *DoorPhoneServer) handleMuteToggle(w http.ResponseWriter, r *http.Reques
 	if isMuted {
 		action = "unmute"
 	}
-	_, err := exec.Command("amixer", "sset", control, action).CombinedOutput()
+	_, err := runAmixer(control, "sset", action)
 	okVal := err == nil
 	newMute := getAlsaMute(control)
 	w.Header().Set("Content-Type", "application/json")
@@ -1173,7 +1261,7 @@ func (b *DoorPhoneServer) handleMuteToggle(w http.ResponseWriter, r *http.Reques
 // @param control nome del controllo ALSA (es. "Headphone", "Mic")
 // @return livello di volume in percentuale (0-100), o 0 in caso di errore
 func getAlsaVolume(control string) int {
-	out, err := exec.Command("amixer", "sget", control).Output()
+	out, err := runAmixer(control, "sget")
 	if err != nil {
 		return 0
 	}
