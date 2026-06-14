@@ -5,7 +5,8 @@
 # Configurazioni applicate:
 #   /etc/openal/alsoft.conf — OpenAL: hq-mode off, nfc on
 #   /etc/modprobe.d/        — Blacklist adattatori WiFi USB concorrenti (8192cu, rtl8xxxu)
-#   /boot/firmware/config.txt — Boot Pi4: audio BCM off, BT off, headless, gpu_mem=16
+#   /boot/firmware/config.txt — Boot Pi4: BT off, headless, gpu_mem=16
+#       (audio onboard LASCIATO attivo: evita la rinumerazione delle schede ALSA)
 #
 # NOTA: /etc/asound.conf è gestito dallo step audio del wizard (rilevamento automatico
 #       scheda) e NON deve essere sovrascritto qui.
@@ -38,9 +39,12 @@ BOOT_CFG="/boot/firmware/config.txt"
 [ -f "$BOOT_CFG" ] || BOOT_CFG="/boot/config.txt"
 if [ -f "$BOOT_CFG" ]; then
     cp "$BOOT_CFG" "$BOOT_CFG.bak.$(date +%Y%m%d)"
-    # Audio onboard off (aggiunge la riga se assente, poi forza off)
-    grep -q "dtparam=audio" "$BOOT_CFG" || echo "dtparam=audio=off" >> "$BOOT_CFG"
-    sed -i 's/^dtparam=audio=.*/dtparam=audio=off/' "$BOOT_CFG"
+    # NB: l'audio onboard (bcm2835 + vc4-hdmi) viene lasciato ATTIVO di
+    # proposito. Disabilitarlo cambierebbe la numerazione delle schede ALSA tra
+    # il momento del setup e dopo il reboot (la USB si rinumera), rompendo la
+    # scheda/controllo scelti dall'operatore. Con tutte le schede presenti la
+    # numerazione resta stabile (WYSIWYG); asound.conf instrada comunque tutto
+    # sulla scheda USB selezionata, per nome stabile. Le onboard restano inutilizzate.
     # Bluetooth off
     grep -q "dtoverlay=disable-bt"    "$BOOT_CFG" || echo "dtoverlay=disable-bt"    >> "$BOOT_CFG"
     # GPU memoria minima (headless)
@@ -50,9 +54,9 @@ if [ -f "$BOOT_CFG" ]; then
     grep -q "display_auto_detect"     "$BOOT_CFG" || echo "display_auto_detect=0"  >> "$BOOT_CFG"
     grep -q "hdmi_blanking"           "$BOOT_CFG" || echo "hdmi_blanking=2"        >> "$BOOT_CFG"
     grep -q "hdmi_ignore_hotplug"     "$BOOT_CFG" || echo "hdmi_ignore_hotplug=1"  >> "$BOOT_CFG"
-    # Disabilita driver video vc4 e riduce framebuffer a 1 (headless, nessun display)
-    sed -i 's/^\(dtoverlay=vc4-kms-v3d.*\)/#\1/' "$BOOT_CFG"
-    sed -i 's/^\(dtoverlay=vc4-fkms-v3d.*\)/#\1/' "$BOOT_CFG"
+    # Driver video vc4 lasciato ATTIVO: disabilitarlo toglierebbe le schede
+    # audio vc4-hdmi, alterando la numerazione ALSA (vedi nota sopra). Riduce
+    # comunque il framebuffer a 1 (headless, nessun display).
     sed -i 's/^max_framebuffers=.*/max_framebuffers=1/' "$BOOT_CFG"
     # Sopprimi avvisi undervoltage
     grep -q "avoid_warnings"          "$BOOT_CFG" || echo "avoid_warnings=1"       >> "$BOOT_CFG"

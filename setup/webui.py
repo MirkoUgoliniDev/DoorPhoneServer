@@ -159,7 +159,8 @@ HTML = r"""<!DOCTYPE html>
   .card-failed  { border-color:var(--error) !important; }
   /* Collasso dei blocchi: quando .collapsed è attivo resta solo l'header */
   .step-head { cursor:pointer; user-select:none; }
-  .step-chevron { display:inline-block; transition:transform .2s; color:var(--muted); flex-shrink:0; font-size:.8rem; }
+  .step-chevron { display:inline-block; transition:transform .2s; color:var(--accent); flex-shrink:0; font-size:1.4rem; line-height:1; padding:0 .25rem; }
+  .step-head:hover .step-chevron { color:#fff; }
   .card.collapsed .step-chevron { transform:rotate(-90deg); }
   .card.collapsed .step-config { display:none !important; }
   .card.collapsed [id^="card-log-"] { display:none !important; }
@@ -336,7 +337,7 @@ HTML = r"""<!DOCTYPE html>
           onmouseover="this.style.background='#cba6f7';this.style.color='#1e1e2e';this.style.boxShadow='0 0 8px #cba6f780'"
           onmouseout="this.style.background='#1e1e2e';this.style.color='#cba6f7';this.style.boxShadow='none'">i</button>
         {% endif %}
-        <span class="step-chevron">▾</span>
+        <span class="step-chevron">▼</span>
       </div>
 
       <!-- Config section (solo per step configurabili) -->
@@ -467,11 +468,11 @@ HTML = r"""<!DOCTYPE html>
       <div class="step-config mt-3 pt-3" style="border-top:1px solid #313244;display:grid;grid-template-columns:1fr 1fr;gap:.75rem;align-items:end">
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO OUTPUT (card n.)</label>
-          <select id="playCard" onchange="_audioUserChose=true"><option value="0">0 — rilevamento...</option></select>
+          <select id="playCard" onchange="_audioUserChose=true;_updateAudioModalCards()"><option value="0">0 — rilevamento...</option></select>
         </div>
         <div>
           <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">AUDIO INPUT (card n.)</label>
-          <select id="capCard" onchange="_audioUserChose=true"><option value="0">0 — rilevamento...</option></select>
+          <select id="capCard" onchange="_audioUserChose=true;_updateAudioModalCards()"><option value="0">0 — rilevamento...</option></select>
         </div>
         <div class="col-span-2 mt-1 flex gap-2 flex-wrap" style="grid-column:1/-1">
           <button onclick="refreshCards(this)" class="btn-primary" style="background:#45475a;color:#cdd6f4;font-size:.85rem;padding:.4rem 1.1rem">↺ Aggiorna schede</button>
@@ -706,6 +707,8 @@ HTML = r"""<!DOCTYPE html>
         <h2 class="text-lg font-bold" style="color:#cba6f7">🔊 Test Audio &amp; Volumi</h2>
         <button onclick="closeAudioModal()" class="text-lg px-2" style="color:var(--muted)">✕</button>
       </div>
+      <!-- Schede attualmente selezionate (riflette i select OUTPUT/INPUT del wizard) -->
+      <div id="audioModalCards" class="text-xs -mt-1 mb-1" style="color:#cdd6f4">—</div>
 
       <!-- TEST PLAY -->
       <div class="rounded-lg p-4" style="background:#11111b;border:1px solid #313244">
@@ -1383,8 +1386,19 @@ let _vuSource   = null;   // mic
 let _playVuSrc  = null;   // speaker
 let _playVolPct = 100;
 
+function _updateAudioModalCards() {
+  const p = document.getElementById('playCard');
+  const c = document.getElementById('capCard');
+  const pt = (p && p.selectedOptions[0]) ? p.selectedOptions[0].text : '—';
+  const ct = (c && c.selectedOptions[0]) ? c.selectedOptions[0].text : '—';
+  const el = document.getElementById('audioModalCards');
+  if (el) el.innerHTML = '🔈 Output: <b style="color:#a6e3a1">' + pt +
+    '</b> &nbsp;·&nbsp; 🎤 Input: <b style="color:#a6e3a1">' + ct + '</b>';
+}
+
 function openAudioModal() {
   document.getElementById('audioModal').classList.remove('hidden');
+  _updateAudioModalCards();
   loadAudioInfo();
   loadFileList();
   if (!_vuSource) toggleVU();

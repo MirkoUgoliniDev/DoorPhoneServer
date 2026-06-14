@@ -50,6 +50,21 @@ class StepAudioConfig(Step):
         runner.run(["chmod", "644", "/etc/asound.conf"], sudo=True)
         # alsoft.conf è installato dallo step Config Boot RPi (setup_configs.sh)
 
+        # Sblocca e imposta i volumi sulla scheda scelta. Molti dongle USB (es.
+        # chipset CM108) partono MUTATI via hardware: senza unmute non esce/entra
+        # audio anche con la card corretta. 'alsactl store' salva lo stato così
+        # resta sbloccato al reboot. I controlli inesistenti vengono ignorati.
+        if not runner.dry_run:
+            runner.shell(
+                f'for c in Speaker PCM Master Headphone Lineout Front; do '
+                f'  amixer -c {play_card} sset "$c" 90% unmute 2>/dev/null; done; '
+                f'for c in Mic Capture "Mic Boost" Digital; do '
+                f'  amixer -c {cap_card} sset "$c" 80% cap unmute 2>/dev/null; done; '
+                f'alsactl store 2>/dev/null; true',
+                sudo=True,
+            )
+            runner.log("  ✓ Mixer sbloccato (unmute + volumi) e salvato con alsactl store")
+
         # Aggiorna outputdevice nel XML sorgente (verrà copiato da StepDataDir)
         xml_src = REPO_ROOT / "doorphoneserver.xml"
         if runner.dry_run:
