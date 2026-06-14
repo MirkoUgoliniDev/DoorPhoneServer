@@ -141,6 +141,7 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 
 	// System info
 	mux.HandleFunc("/panel/api/sysinfo", b.handleSysInfo)
+	mux.HandleFunc("/panel/api/features", b.handlePanelFeatures)
 	// ESP32-S3 control endpoints
 	mux.HandleFunc("/panel/api/esp32/status", b.handleESP32Status)
 	mux.HandleFunc("/panel/api/esp32/fan", b.handleESP32Fan)
@@ -168,6 +169,8 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 			b.handleWhitelistUpdate(w, r)
 		} else if r.Method == http.MethodDelete {
 			b.handleWhitelistDelete(w, r)
+		} else if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/toggle") {
+			b.handleWhitelistToggle(w, r)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -449,7 +452,18 @@ func (b *DoorPhoneServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if err := os.WriteFile(ConfigXMLFile, body, 0644); err != nil {
+		// Scrittura atomica (temp + rename): handleAppConfig rilegge l'XML dal disco
+		// ad ogni richiesta, quindi un WriteFile non atomico potrebbe esporre un file
+		// troncato a una lettura concorrente.
+		tmpPath := ConfigXMLFile + ".tmp"
+		if err := os.WriteFile(tmpPath, body, 0644); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, `{"ok":false,"error":"Cannot write config: %s"}`, strings.ReplaceAll(err.Error(), `"`, `\"`))
+			return
+		}
+		if err := os.Rename(tmpPath, ConfigXMLFile); err != nil {
+			os.Remove(tmpPath)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, `{"ok":false,"error":"Cannot write config: %s"}`, strings.ReplaceAll(err.Error(), `"`, `\"`))
@@ -789,17 +803,9 @@ func (b *DoorPhoneServer) handleService(w http.ResponseWriter, r *http.Request) 
 		// uptime
 		uptime := time.Since(StartTime).Round(time.Second).String()
 
-		hbLast := HeartBeatLastTime.Load()
-		hbLastStr := ""
-		if hbLast > 0 {
-			hbLastStr = time.Unix(hbLast, 0).Format("15:04:05")
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"%s","uptime":"%s","version":"%s","build_time":"%s","connected":%t,"heartbeat_enabled":%t,"heartbeat_count":%d,"heartbeat_period_ms":%d,"heartbeat_last_time":"%s"}`,
-			status, uptime, doorphoneserverVersion, BuildTime, IsConnected.Load(),
-			Config.Global.Hardware.HeartBeat.Enabled, HeartBeatCount.Load(),
-			Config.Global.Hardware.HeartBeat.Periodmsecs, hbLastStr)
+		fmt.Fprintf(w, `{"status":"%s","uptime":"%s","version":"%s","build_time":"%s","connected":%t}`,
+			status, uptime, doorphoneserverVersion, BuildTime, IsConnected.Load())
 		return
 	}
 
@@ -1870,6 +1876,36 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Rileggi la configurazione XML dal disco a ogni richiesta, così che le
+	// modifiche al file (salvataggio dal pannello o edit manuale) si riflettano
+	// subito nel JSON servito ai tablet senza riavviare il binario. Le credenziali
+	// (username/password Mumble e camera) hanno tag xml:"-": non stanno nell'XML
+	// ma derivano dal .env risolto all'avvio, quindi le riprendiamo dalla Config
+	// globale. In caso di errore di lettura/parsing si usa la Config globale.
+	src := Config
+	if data, err := os.ReadFile(ConfigXMLFile); err != nil {
+		log.Printf("warn: handleAppConfig: rilettura %s fallita, uso config in memoria: %v", filepath.Base(ConfigXMLFile), err)
+	} else {
+		var parsed ConfigStruct
+		if err := xml.Unmarshal(data, &parsed); err != nil {
+			log.Printf("warn: handleAppConfig: parsing %s fallito, uso config in memoria: %v", filepath.Base(ConfigXMLFile), err)
+		} else {
+			// Reinserisci le credenziali (non presenti nell'XML) dalla Config globale.
+			parsed.Global.Software.Camera.Username = Config.Global.Software.Camera.Username
+			parsed.Global.Software.Camera.Password = Config.Global.Software.Camera.Password
+			for i := range parsed.Accounts.Account {
+				for _, g := range Config.Accounts.Account {
+					if g.Name == parsed.Accounts.Account[i].Name {
+						parsed.Accounts.Account[i].UserName = g.UserName
+						parsed.Accounts.Account[i].Password = g.Password
+						break
+					}
+				}
+			}
+			src = parsed
+		}
+	}
+
 	apkPath := filepath.Join(filepath.Dir(ConfigXMLFile), "apk")
 	files, _ := filepath.Glob(filepath.Join(apkPath, "*.apk"))
 	apkNames := []string{}
@@ -1908,32 +1944,32 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 	micLevel := 100
 	speakerLevel := 100
 	screenBrightnessLevel := 100
-	if Config.Global.Software.Tablet.Enabled {
+	if src.Global.Software.Tablet.Enabled {
 		switch strings.ToLower(r.URL.Query().Get("p")) {
 		case "p2":
-			kioskMode = Config.Global.Software.Tablet.P2.KioskMode
-			hideStatusBar = Config.Global.Software.Tablet.P2.HideStatusBar
-			if v := Config.Global.Software.Tablet.P2.MicLevel; v > 0 { micLevel = v }
-			if v := Config.Global.Software.Tablet.P2.SpeakerLevel; v > 0 { speakerLevel = v }
-			if v := Config.Global.Software.Tablet.P2.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
+			kioskMode = src.Global.Software.Tablet.P2.KioskMode
+			hideStatusBar = src.Global.Software.Tablet.P2.HideStatusBar
+			if v := src.Global.Software.Tablet.P2.MicLevel; v > 0 { micLevel = v }
+			if v := src.Global.Software.Tablet.P2.SpeakerLevel; v > 0 { speakerLevel = v }
+			if v := src.Global.Software.Tablet.P2.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
 		case "p3":
-			kioskMode = Config.Global.Software.Tablet.P3.KioskMode
-			hideStatusBar = Config.Global.Software.Tablet.P3.HideStatusBar
-			if v := Config.Global.Software.Tablet.P3.MicLevel; v > 0 { micLevel = v }
-			if v := Config.Global.Software.Tablet.P3.SpeakerLevel; v > 0 { speakerLevel = v }
-			if v := Config.Global.Software.Tablet.P3.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
+			kioskMode = src.Global.Software.Tablet.P3.KioskMode
+			hideStatusBar = src.Global.Software.Tablet.P3.HideStatusBar
+			if v := src.Global.Software.Tablet.P3.MicLevel; v > 0 { micLevel = v }
+			if v := src.Global.Software.Tablet.P3.SpeakerLevel; v > 0 { speakerLevel = v }
+			if v := src.Global.Software.Tablet.P3.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
 		case "p4":
-			kioskMode = Config.Global.Software.Tablet.P4.KioskMode
-			hideStatusBar = Config.Global.Software.Tablet.P4.HideStatusBar
-			if v := Config.Global.Software.Tablet.P4.MicLevel; v > 0 { micLevel = v }
-			if v := Config.Global.Software.Tablet.P4.SpeakerLevel; v > 0 { speakerLevel = v }
-			if v := Config.Global.Software.Tablet.P4.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
+			kioskMode = src.Global.Software.Tablet.P4.KioskMode
+			hideStatusBar = src.Global.Software.Tablet.P4.HideStatusBar
+			if v := src.Global.Software.Tablet.P4.MicLevel; v > 0 { micLevel = v }
+			if v := src.Global.Software.Tablet.P4.SpeakerLevel; v > 0 { speakerLevel = v }
+			if v := src.Global.Software.Tablet.P4.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
 		default: // p1 o parametro assente
-			kioskMode = Config.Global.Software.Tablet.P1.KioskMode
-			hideStatusBar = Config.Global.Software.Tablet.P1.HideStatusBar
-			if v := Config.Global.Software.Tablet.P1.MicLevel; v > 0 { micLevel = v }
-			if v := Config.Global.Software.Tablet.P1.SpeakerLevel; v > 0 { speakerLevel = v }
-			if v := Config.Global.Software.Tablet.P1.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
+			kioskMode = src.Global.Software.Tablet.P1.KioskMode
+			hideStatusBar = src.Global.Software.Tablet.P1.HideStatusBar
+			if v := src.Global.Software.Tablet.P1.MicLevel; v > 0 { micLevel = v }
+			if v := src.Global.Software.Tablet.P1.SpeakerLevel; v > 0 { speakerLevel = v }
+			if v := src.Global.Software.Tablet.P1.ScreenBrightnessLevel; v > 0 { screenBrightnessLevel = v }
 		}
 	}
 
@@ -1945,7 +1981,7 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 	}
 
 	var mumbleCfg MumbleConfig
-	for _, acc := range Config.Accounts.Account {
+	for _, acc := range src.Accounts.Account {
 		if acc.Default {
 			host, port, err := net.SplitHostPort(acc.ServerAndPort)
 			if err != nil {
@@ -2026,15 +2062,15 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 		},
 		Camera: CameraConfig{
 			Video: CameraVideoConfig{
-				Enabled:  Config.Global.Software.Camera.Video.Enabled,
-				Endpoint: Config.Global.Software.Camera.Video.Endpoint,
+				Enabled:  src.Global.Software.Camera.Video.Enabled,
+				Endpoint: src.Global.Software.Camera.Video.Endpoint,
 			},
 			Snapshot: CameraSnapshotConfig{
-				Enabled:  Config.Global.Software.Camera.Snapshot.Enabled,
-				Endpoint: Config.Global.Software.Camera.Snapshot.Endpoint,
+				Enabled:  src.Global.Software.Camera.Snapshot.Enabled,
+				Endpoint: src.Global.Software.Camera.Snapshot.Endpoint,
 			},
-			Username: Config.Global.Software.Camera.Username,
-			Password: Config.Global.Software.Camera.Password,
+			Username: src.Global.Software.Camera.Username,
+			Password: src.Global.Software.Camera.Password,
 		},
 	}
 
@@ -3948,6 +3984,14 @@ func (b *DoorPhoneServer) handleSysInfo(w http.ResponseWriter, r *http.Request) 
 	}
 
 	json.NewEncoder(w).Encode(info)
+}
+
+// handlePanelFeatures restituisce le feature abilitate in base alla configurazione.
+// Il frontend lo usa all'avvio per mostrare/nascondere tab (es. ESP32/NFC con backend=rpi).
+func (b *DoorPhoneServer) handlePanelFeatures(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"esp32":%v}`, ioUseESP32())
 }
 
 // handleESP32Status restituisce lo stato corrente del bridge ESP32-S3:

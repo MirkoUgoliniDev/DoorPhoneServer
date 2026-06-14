@@ -159,27 +159,31 @@ func Init(file string, ServerIndex string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	SetGlobalContext(ctx, cancel)
 
-	usbBridge := NewUSBBridge(ctx)
-	b.USBBridge = usbBridge
-	go NewGPIOUsb(usbBridge).Run(ctx)
-	go NewSmartcard(usbBridge).Run(ctx)
+	b.NFCWhitelist = NewNFCWhitelistManager()
 
-	nfcWL := NewNFCWhitelistManager()
-	b.NFCWhitelist = nfcWL
-	usbBridge.SetNFCManager(nfcWL)
+	if ioUseESP32() {
+		usbBridge := NewUSBBridge(ctx)
+		b.USBBridge = usbBridge
+		ioUSB = NewGPIOUsb(usbBridge, &b)
+		go ioUSB.Run(ctx)
+		go NewSmartcard(usbBridge).Run(ctx)
+		usbBridge.SetNFCManager(b.NFCWhitelist)
 
-	// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
-	go func() {
-		time.Sleep(8 * time.Second)
-		tags, err := usbBridge.SendTagList(5 * time.Second)
-		if err != nil {
-			log.Printf("[NFC] sync avvio fallita: %v", err)
-			return
-		}
-		result := nfcWL.SyncFromESP32(tags)
-		log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
-			result["esp32_count"], result["json_count"], result["in_sync"])
-	}()
+		// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
+		go func() {
+			time.Sleep(8 * time.Second)
+			tags, err := usbBridge.SendTagList(5 * time.Second)
+			if err != nil {
+				log.Printf("[NFC] sync avvio fallita: %v", err)
+				return
+			}
+			result := b.NFCWhitelist.SyncFromESP32(tags)
+			log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
+				result["esp32_count"], result["json_count"], result["in_sync"])
+		}()
+	} else {
+		log.Printf("info: IO backend = RPi — ESP32/USB/NFC disabilitati")
+	}
 
 	if Config.Global.Software.RemoteControl.MQTT.Enabled {
 		log.Printf("info: Attempting to Contact MQTT Server")
@@ -307,7 +311,9 @@ func Init(file string, ServerIndex string) {
 func (b *DoorPhoneServer) ClientStart() {
 	log.Println("info: Logging active for file:", Config.Global.Software.Settings.LogFilenameAndPath)
 
-	GPIOOutAll("led/relay", "off")
+	if !ioUseESP32() {
+		GPIOOutAll("led/relay", "off")
+	}
 
 	colog.SetFlags(log.Ldate | log.Ltime)
 
@@ -335,35 +341,6 @@ func (b *DoorPhoneServer) ClientStart() {
 	pstream = gumbleffmpeg.New(b.Client, gumbleffmpeg.SourceFile(""), 0)
 	pstreamMu.Unlock()
 
-	if Config.Global.Hardware.HeartBeat.Enabled {
-
-		HeartBeat := time.NewTicker(time.Duration(Config.Global.Hardware.HeartBeat.Periodmsecs) * time.Millisecond)
-
-		go func() {
-			for {
-				select {
-				case <-GetGlobalContext().Done():
-					HeartBeat.Stop()
-					return
-				case <-HeartBeat.C:
-					HeartBeatCount.Add(1)
-					HeartBeatLastTime.Store(time.Now().Unix())
-					time.Sleep(time.Duration(Config.Global.Hardware.HeartBeat.LEDOnmsecs) * time.Millisecond)
-					if Config.Global.Hardware.HeartBeat.Enabled {
-						GPIOOutPin("heartbeat", "on")
-					}
-					time.Sleep(time.Duration(Config.Global.Hardware.HeartBeat.LEDOffmsecs) * time.Millisecond)
-					if Config.Global.Hardware.HeartBeat.Enabled {
-						GPIOOutPin("heartbeat", "off")
-					}
-					if KillHeartBeat.Load() {
-						HeartBeat.Stop()
-						return
-					}
-				}
-			}
-		}()
-	}
 
 	if Register[AccountIndex] && !b.Client.Self.IsRegistered() {
 		b.Client.Self.Register()

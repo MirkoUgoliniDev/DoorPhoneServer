@@ -4,7 +4,7 @@
 
 	<accounts>
 		<account name="doorphoneserver-community" default="true">
-			<serverandport>127.0.0.1:64738</serverandport>
+			<serverandport>192.168.1.54:64738</serverandport>
 			<insecure>true</insecure>
 			<register>false</register>
 			<certificate>/home/doorphoneserver/mumble.pem</certificate>
@@ -20,23 +20,21 @@
 
 			<settings>
 				<singleinstance>true</singleinstance>
-				<outputdevice>Speaker</outputdevice>
-				<outputvolcontroldevice>Speaker</outputvolcontroldevice>
-				<outputmutecontroldevice>Speaker</outputmutecontroldevice>
+				<outputdevice>PCM</outputdevice>
+				<outputvolcontroldevice>PCM</outputvolcontroldevice>
+				<outputmutecontroldevice>PCM</outputmutecontroldevice>
 				<logfilenameandpath>/home/doorphoneserver/doorphoneserver.log</logfilenameandpath>
 				<logging>fileonly</logging>
 				<loglevel>info</loglevel>
 				<logmaxsizemb>5</logmaxsizemb>
 				<logretentiondays>7</logretentiondays>
-				<cancellablestream>true</cancellablestream>
 				<streamonstart>false</streamonstart>
 				<streamafterstart>5</streamafterstart>
 				<streamsendmessage>false</streamsendmessage>
 				<txonstart>false</txonstart>
 				<txafterstart>5</txafterstart>
-				<repeattxtimes>5</repeattxtimes>
-				<repeattxdelay>1</repeattxdelay>
 				<simplexwithmute>true</simplexwithmute>
+				<voiceactivitytimermsecs>200</voiceactivitytimermsecs>
 			</settings>
 
 			<tts enabled="true">
@@ -65,6 +63,7 @@
 
 
 			<remotecontrol>
+			  
 				<http listenport="8080" enabled="true">
 					<command action="mute" funcparamname="mute" message="Mute" enabled="true"/>
 					<command action="unmute" funcparamname="unmute" message="Unute" enabled="true"/>
@@ -97,9 +96,9 @@
 
 		<tablet enabled="true">
     <p1 kioskmode="true" hide_status_bar="true" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p1>
-    <p2 kioskmode="true"  hide_status_bar="true"  miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p2>
-    <p3 kioskmode="false" hide_status_bar="false" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p3>
-    <p4 kioskmode="true" hide_status_bar="true" miclevel="140" speakerlevel="1" screenbrightnesslevel="100"></p4>
+    <p2 kioskmode="true" hide_status_bar="true"  miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p2>
+    <p3 kioskmode="true" hide_status_bar="true" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p3>
+    <p4 kioskmode="false" hide_status_bar="false" miclevel="140" speakerlevel="1" screenbrightnesslevel="100"></p4>
     </tablet>
 
 		</software>
@@ -107,41 +106,21 @@
 
 		<hardware>
 
-			<voiceactivitytimermsecs>200</voiceactivitytimermsecs>
-
-			<heartbeat enabled="true">
-				<heartbeatledpin/>
-				<periodmsecs>2000</periodmsecs>
-				<ledonmsecs>1000</ledonmsecs>
-				<ledoffmsecs>1010</ledoffmsecs>
-			</heartbeat>
-
-
-			<io>
+			<io backend="rpi">
+			  
 				<pulse leadingmsecs="1000" pulsemsecs="1000" trailingmsecs="1000"/>
 
-				<pins enabled="true">
-					<!-- INPUT -->
-					<pin name="p1" direction="input" device="pushbutton" pinno="22" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P1"/>
-					<pin name="p2" direction="input" device="pushbutton" pinno="27" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P2"/>
-					<pin name="p3" direction="input" device="pushbutton" pinno="17" type="gpio" chipid="0" enabled="true" log="false" desc="Pulsante P3"/>
-					<pin name="on_off" direction="input" device="pushbutton" pinno="18" type="gpio" chipid="0" enabled="true" log="false" desc="Accensione Spegnimento"/>
-					<!-- INPUT -->
-
-					<!-- OUTPUT -->
-					<pin name="heartbeat" direction="output" device="led/relay" pinno="26" type="gpio" chipid="0" enabled="true" log="false" desc="HeartBeat LED"/>
-					<pin name="unlockdoor" direction="output" device="led/relay" pinno="5" type="gpio" chipid="0" enabled="true" log="false" desc="Unlock Main Door"/>
-					<pin name="power_tablet" direction="output" device="led/relay" pinno="19" type="gpio" chipid="0" enabled="true" log="false" desc="Power Tablet"/>
-					<pin name="led_power" direction="output" device="led/relay" pinno="23" type="gpio" chipid="0" enabled="false" log="false" desc="Power Led"/>
-					<pin name="fan" direction="output" device="led/relay" pinno="16" type="gpio" chipid="0" enabled="false" log="false" desc="Cooler Fan"/>
-					<!-- OUTPUT -->
-				</pins>
-
-				<sonoff enabled="false">
-					<device name="device1" type="tasmota" url="http://192.168.1.25" enabled="false"  log="false" desc="Light Main Door" status=""/>
-					<device name="device3" type="tasmota" url="http://192.168.1.30" enabled="false"  log="false" desc="Light Courtyard" status=""/>
-					<device name="device2" type="tasmota" url="http://192.168.1.28" enabled="false" log="false" desc="Star Lights" status=""/>
-				</sonoff>
+			<pins enabled="true">
+       <input>
+        <pin name="p1"     pinno="22" enabled="true"  log="false" desc="Pulsante P1"/>
+        <pin name="p2"     pinno="27" enabled="true"  log="false" desc="Pulsante P2"/>
+        <pin name="p3"     pinno="17" enabled="true"  log="false" desc="Pulsante P3"/>
+       </input>
+       <output>
+        <pin name="unlockdoor"   pinno="5"  enabled="true"  log="false" desc="Unlock Main Door"/>
+        <pin name="power_tablet" pinno="19" enabled="true"  log="false" desc="Power Tablet"/>
+       </output>
+      </pins>
 
 			</io>
 

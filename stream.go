@@ -569,7 +569,7 @@ func (s *Stream) OnAudioStream(e *gumble.AudioStreamEvent) {
 				if !ok {
 					return
 				}
-				TalkedTicker.Reset(Config.Global.Hardware.VoiceActivityTimermsecs * time.Millisecond)
+				TalkedTicker.Reset(Config.Global.Software.Settings.VoiceActivityTimermsecs * time.Millisecond)
 				select {
 				case Talking <- talkingStruct{true, e.User.Name}:
 				case <-ctx.Done():

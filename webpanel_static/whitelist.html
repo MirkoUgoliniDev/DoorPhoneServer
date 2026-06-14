@@ -197,6 +197,7 @@ input.name-input:focus{outline:none;border-color:var(--accent)}
             <th>UID</th>
             <th>Nominativo</th>
             <th>Tipo</th>
+            <th style="text-align:center">Stato</th>
             <th>Aggiunto il</th>
             <th>Ultimo accesso</th>
             <th>Accessi</th>
@@ -204,7 +205,7 @@ input.name-input:focus{outline:none;border-color:var(--accent)}
           </tr>
         </thead>
         <tbody id="wlBody">
-          <tr><td colspan="7" class="empty-state">
+          <tr><td colspan="8" class="empty-state">
             <div class="spinner" style="margin:0 auto 12px"></div>
             <div>Caricamento…</div>
           </td></tr>
@@ -251,7 +252,7 @@ async function loadList() {
     renderList();
   } catch(e) {
     document.getElementById('wlBody').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;padding:32px;color:#ef4444">Errore: ${e.message}</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;padding:32px;color:#ef4444">Errore: ${e.message}</td></tr>`;
   }
 }
 
@@ -260,21 +261,29 @@ function renderList() {
   document.getElementById('countLabel').textContent = wlData.length ? `${wlData.length} tag` : '';
 
   if (!wlData || !wlData.length) {
-    body.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="bi bi-wifi-off"></i>Nessun tag in whitelist.<br>Clicca <b>Aggiungi Tag</b> per iniziare.</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="8"><div class="empty-state"><i class="bi bi-wifi-off"></i>Nessun tag in whitelist.<br>Clicca <b>Aggiungi Tag</b> per iniziare.</div></td></tr>`;
     return;
   }
 
   const sorted = [...wlData].sort((a,b) => new Date(b.added_at) - new Date(a.added_at));
   body.innerHTML = sorted.map(e => `
-    <tr>
+    <tr style="${e.disabled ? 'opacity:0.5' : ''}">
       <td><span class="tag-id">${esc(e.uid)}</span></td>
       <td>${esc(e.name)}</td>
       <td><span class="badge-type badge-${e.type === 'DESFIRE' ? 'desfire' : 'plain'}">${esc(e.type)}</span></td>
+      <td style="text-align:center">
+        ${e.disabled
+          ? '<span style="color:#ef4444;font-size:12px;font-weight:600">DISABILITATO</span>'
+          : '<span style="color:#22c55e;font-size:12px;font-weight:600">ATTIVO</span>'}
+      </td>
       <td style="color:var(--dim);font-size:12px">${fmtDate(e.added_at)}</td>
       <td style="color:var(--dim);font-size:12px">${fmtDate(e.last_access)}</td>
       <td style="text-align:center">${e.access_count || 0}</td>
       <td>
         <div class="action-btns">
+          <button class="btn-xs ${e.disabled ? '' : 'danger'}" onclick="toggleTag('${esc(e.uid)}',${e.disabled})">
+            <i class="bi bi-${e.disabled ? 'check-circle' : 'slash-circle'}"></i> ${e.disabled ? 'Abilita' : 'Disabilita'}
+          </button>
           <button class="btn-xs" onclick="openEdit('${esc(e.uid)}','${esc(e.name)}')"><i class="bi bi-pencil"></i> Modifica</button>
           <button class="btn-xs danger" onclick="openDelete('${esc(e.uid)}','${esc(e.name)}')"><i class="bi bi-trash3"></i> Rimuovi</button>
         </div>
@@ -463,6 +472,24 @@ async function confirmEdit() {
 }
 
 function closeEditModal() { hideModal('editModal'); }
+
+async function toggleTag(uid, currentlyDisabled) {
+  const action = currentlyDisabled ? 'abilitare' : 'disabilitare';
+  if (!confirm(`Vuoi ${action} il tag ${uid}?`)) return;
+  try {
+    const r = await fetch('/api/whitelist/' + encodeURIComponent(uid) + '/toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({disabled: !currentlyDisabled})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    toast(`Tag ${currentlyDisabled ? 'abilitato' : 'disabilitato'}`, true);
+    await loadList();
+  } catch(e) {
+    toast('Errore: ' + e.message, false);
+  }
+}
 
 function openDelete(uid, name) {
   deleteTarget = uid;

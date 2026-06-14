@@ -4,7 +4,7 @@
 
 # DoorPhoneServer
 
-Sistema di citofonia IP basato su Mumble per Raspberry Pi. Gestisce chiamate audio bidirezionali, controllo relè porta, telecamera IP, notifiche push e automazione domestica tramite MQTT/Tasmota.
+Sistema di citofonia IP basato su Mumble per Raspberry Pi. Gestisce chiamate audio bidirezionali, controllo relè porta, telecamera IP, notifiche push e accesso NFC/RFID. Supporta due backend IO intercambiabili: GPIO diretti del Raspberry Pi oppure scheda ESP32-S3 via USB.
 
 ---
 
@@ -92,7 +92,7 @@ Il pannello web chiede solo il nome del titolare. L'ESP32 identifica autonomamen
 **Sincronizzazione stato al boot:**  
 All'avvio della connessione USB il Pi invia automaticamente `GET-STATE` e poi `FLOOR-GET`. L'ESP32 risponde con `STATE FAN:XX TABLET:ON/OFF` (da NVS) e con `FLOOR-P1/P2/P3 s1|s2|s3|s4` (da LittleFS), così slider ventola, toggle tablet e testi occupanti nel pannello web riflettono sempre il valore reale dell'hardware anche dopo un riavvio del Pi.
 
-> ⚠ **Repository in sviluppo** — la scheda e il firmware non sono ancora completati. Il protocollo lato server è sviluppato nel branch `GPIO-OVER-USB` di DoorPhoneServer, ma l'integrazione completa è ancora in corso. Non usare in produzione.
+> **Lato server completamente integrato.** Il supporto ESP32-S3 è parte del branch `main` di DoorPhoneServer. Il backend IO si seleziona con un singolo attributo XML — vedi [Backend IO: RPi vs ESP32](#backend-io-rpi-vs-esp32). La scheda hardware e il firmware ESP32 sono ancora in sviluppo.
 
 ---
 
@@ -106,13 +106,14 @@ All'avvio della connessione USB il Pi invia automaticamente `GET-STATE` e poi `F
 6. [Parte E — Setup Wizard: i passi spiegati](#6-parte-e--setup-wizard-i-passi-spiegati)
 7. [Parte F — Dopo l'installazione](#7-parte-f--dopo-linstallazione)
 8. [Configurazione doorphoneserver.xml](#8-configurazione-doorphoneserverxml)
-9. [Variabili d'ambiente (.env)](#9-variabili-dambiente-env)
-10. [Struttura file sul sistema](#10-struttura-file-sul-sistema)
-11. [Comandi utili](#11-comandi-utili)
-12. [Aggiornamento e rebuild](#12-aggiornamento-e-rebuild)
-13. [Problemi comuni](#13-problemi-comuni)
-14. [Pannello Web — NFC Whitelist](#14-pannello-web--nfc-whitelist)
-15. [Pannello Web — Tab ESP32: Occupanti Piano](#15-pannello-web--tab-esp32-occupanti-piano)
+9. [Backend IO: RPi vs ESP32](#9-backend-io-rpi-vs-esp32)
+10. [Variabili d'ambiente (.env)](#10-variabili-dambiente-env)
+11. [Struttura file sul sistema](#11-struttura-file-sul-sistema)
+12. [Comandi utili](#12-comandi-utili)
+13. [Aggiornamento e rebuild](#13-aggiornamento-e-rebuild)
+14. [Problemi comuni](#14-problemi-comuni)
+15. [Pannello Web — NFC Whitelist](#15-pannello-web--nfc-whitelist)
+16. [Pannello Web — Tab ESP32: Occupanti Piano](#16-pannello-web--tab-esp32-occupanti-piano)
 
 ---
 
@@ -492,23 +493,32 @@ Se un passo critico fallisce:
 
 ### F1. Configura doorphoneserver.xml
 
-Al termine del wizard, **prima di riavviare**, aggiorna la configurazione principale:
+Al termine del wizard, **prima di riavviare**, aggiorna la configurazione principale. Puoi farlo in due modi:
 
+**Via pannello web** (consigliato) — apri `http://<ip-pi>:8080/panel` → tab **Config**, modifica l'XML nell'editor e clicca **Salva**. Le modifiche vengono ricaricate dinamicamente dai tablet senza riavvio del servizio.
+
+**Via terminale:**
 ```bash
 nano /home/doorphoneserver/doorphoneserver.xml
 ```
 
 Parametri da personalizzare:
 
-**IP telecamera** — cerca e sostituisci `192.168.1.124` con l'IP reale della tua telecamera:
+**IP telecamera** — sostituisci `192.168.1.XXX` con l'IP reale della tua telecamera:
 ```xml
 <endpoint>rtsp://192.168.1.XXX:554/Preview_01_sub</endpoint>
-<endpoint>http://192.168.1.XXX/cgi-bin/api.cgi?cmd=Snap...</endpoint>
+<endpoint>http://192.168.1.XXX/cgi-bin/api.cgi?cmd=Snap&amp;channel=0&amp;rs=abc</endpoint>
 ```
 
-**Dispositivi Tasmota** — se hai prese/relè Tasmota, abilita e configura:
+**Backend IO** — se usi la scheda ESP32-S3, cambia l'attributo:
 ```xml
-<device name="device1" type="tasmota" url="http://192.168.1.XXX" enabled="true" desc="Elettroserratura"/>
+<io backend="esp32">
+```
+
+**Pin GPIO** — se i numeri BCM dei tuoi pulsanti/relè sono diversi da quelli predefiniti, modifica i `pinno`:
+```xml
+<pin name="p1" pinno="22" .../>       <!-- BCM 22 = pin fisico 15 -->
+<pin name="unlockdoor" pinno="5" .../> <!-- BCM 5 = pin fisico 29 -->
 ```
 
 Per salvare in nano: `Ctrl+O` → Invio → `Ctrl+X`
@@ -598,7 +608,7 @@ rm -rf ~/doorphoneserver-setup
 
 ## 8. Configurazione doorphoneserver.xml
 
-Il file principale è `/home/doorphoneserver/doorphoneserver.xml`. Sezioni chiave:
+Il file principale è `/home/doorphoneserver/doorphoneserver.xml`. Il pannello web (Config Editor) permette di modificarlo e salvarlo senza riavviare il servizio — le modifiche vengono rilette dinamicamente ad ogni richiesta `/config/` dai tablet.
 
 ### Account Mumble
 
@@ -609,20 +619,36 @@ Il file principale è `/home/doorphoneserver/doorphoneserver.xml`. Sezioni chiav
     <insecure>true</insecure>
     <ident>DoorPi</ident>
     <certificate>/home/doorphoneserver/mumble.pem</certificate>
-    <channel/>
+    <channel/>          <!-- vuoto = canale Root; valorizzare per entrare in un canale specifico -->
   </account>
 </accounts>
 ```
 
-### Audio
+> Le credenziali (`username`, `password`) non stanno nell'XML ma nel file `.env` — vedi [sezione 10](#10-variabili-dambiente-env).
+
+### Settings
 
 ```xml
-<outputdevice>Headphone</outputdevice>
-<outputvolcontroldevice>Headphone</outputvolcontroldevice>
-<outputmutecontroldevice>Headphone</outputmutecontroldevice>
+<settings>
+  <outputdevice>PCM</outputdevice>
+  <outputvolcontroldevice>PCM</outputvolcontroldevice>
+  <outputmutecontroldevice>PCM</outputmutecontroldevice>
+  <logfilenameandpath>/home/doorphoneserver/doorphoneserver.log</logfilenameandpath>
+  <logging>fileonly</logging>        <!-- fileonly | both | disabled -->
+  <loglevel>info</loglevel>          <!-- info | debug | warn | error -->
+  <logmaxsizemb>5</logmaxsizemb>
+  <logretentiondays>7</logretentiondays>
+  <streamonstart>false</streamonstart>
+  <streamafterstart>5</streamafterstart>   <!-- secondi attesa prima di avviare lo stream -->
+  <streamsendmessage>false</streamsendmessage>
+  <txonstart>false</txonstart>
+  <txafterstart>5</txafterstart>
+  <simplexwithmute>true</simplexwithmute>
+  <voiceactivitytimermsecs>200</voiceactivitytimermsecs>  <!-- ms di silenzio prima di dichiarare fine voce -->
+</settings>
 ```
 
-Il nome (`Headphone`, `Speaker`, `PCM`…) dipende dalla scheda USB. Per trovarlo:
+Il nome del controllo audio (`PCM`, `Headphone`, `Speaker`…) dipende dalla scheda USB. Per trovarlo:
 ```bash
 amixer -c 1 scontents | grep "Simple mixer"
 ```
@@ -635,7 +661,10 @@ amixer -c 1 scontents | grep "Simple mixer"
     <endpoint>rtsp://192.168.1.XXX:554/Preview_01_sub</endpoint>
   </video>
   <snapshot enabled="true">
+    <method>ffmpeg</method>
     <endpoint>http://192.168.1.XXX/cgi-bin/api.cgi?cmd=Snap&amp;channel=0&amp;rs=abc</endpoint>
+    <maxsnapshots>100</maxsnapshots>
+    <retentiondays>30</retentiondays>
     <dir>/home/doorphoneserver/snapshots</dir>
   </snapshot>
 </camera>
@@ -645,19 +674,100 @@ amixer -c 1 scontents | grep "Simple mixer"
 
 ```xml
 <http listenport="8080" enabled="true">
+  <command action="unlockdoor"        funcparamname="P"  message="unlockdoor"        enabled="true"/>
+  <command action="powertablet_on"    funcparamname=""   message="powertablet_on"     enabled="true"/>
+  <command action="powertablet_off"   funcparamname=""   message="powertablet_off"    enabled="true"/>
+  <command action="takesnapshot"      funcparamname=""   message="takesnapshot"       enabled="true"/>
+  <command action="reboot_server"     funcparamname=""   message="reboot_server"      enabled="true"/>
+</http>
 ```
 
-API REST sulla porta 8080. Comandi disponibili: `powertablet_on/off`, `relay`, `takesnapshot`, `listapi`.
+API REST sulla porta 8080. Il pannello web è raggiungibile su `http://<ip-pi>:8080/panel`.
 
-### Dispositivi Tasmota
+### Pin GPIO — sezione `<io>`
 
 ```xml
-<device name="device1" type="tasmota" url="http://192.168.1.XXX" enabled="true" desc="Elettroserratura"/>
+<io backend="rpi">    <!-- rpi = GPIO Raspberry Pi | esp32 = scheda USB ESP32-S3 -->
+
+  <pulse leadingmsecs="1000" pulsemsecs="1000" trailingmsecs="1000"/>
+
+  <pins enabled="true">
+    <input>
+      <pin name="p1" pinno="22" enabled="true"  log="false" desc="Pulsante P1"/>
+      <pin name="p2" pinno="27" enabled="true"  log="false" desc="Pulsante P2"/>
+      <pin name="p3" pinno="17" enabled="true"  log="false" desc="Pulsante P3"/>
+    </input>
+    <output>
+      <pin name="unlockdoor"   pinno="5"  enabled="true"  log="false" desc="Unlock Main Door"/>
+      <pin name="power_tablet" pinno="19" enabled="true"  log="false" desc="Power Tablet"/>
+    </output>
+  </pins>
+
+</io>
 ```
+
+I numeri `pinno` sono numeri BCM. La direzione (`input`/`output`) è implicita nella struttura XML — non va ripetuta come attributo. Per cambiare backend basta modificare l'attributo `backend` e riavviare il servizio — vedi [sezione 9](#9-backend-io-rpi-vs-esp32).
+
+### Nomi pin riservati
+
+| Nome | Direzione | Funzione |
+|------|-----------|----------|
+| `p1`, `p2`, `p3` | input | Pulsanti campanello piano 1/2/3 |
+| `unlockdoor` | output | Relè apertura porta (impulso) |
+| `power_tablet` | output | Alimentazione tablet Android |
 
 ---
 
-## 9. Variabili d'ambiente (.env)
+## 9. Backend IO: RPi vs ESP32
+
+DoorPhoneServer supporta due backend hardware intercambiabili per la gestione di pulsanti e relè. La scelta si fa con un singolo attributo nell'XML:
+
+```xml
+<io backend="rpi">    <!-- GPIO del Raspberry Pi (default) -->
+<io backend="esp32">  <!-- Scheda USB ESP32-S3 -->
+```
+
+Il cambio richiede il riavvio del servizio. Non è necessario ricompilare.
+
+### Confronto comportamenti
+
+| Aspetto | `backend="rpi"` | `backend="esp32"` |
+|---|---|---|
+| **Pulsanti P1/P2/P3** | Loop GPIO polling (BCM, active-low, debounce 150ms software) | Evento seriale `EVT p1 0` dall'ESP32 (debounce firmware) |
+| **Relè** | `gpio.NewOutput()` sui pin BCM configurati | Comando seriale `SET <nome> on\|off\|pulse` via USB |
+| **Power tablet** | GPIO pin `power_tablet` | Comando `TABLET-ON` / `TABLET-OFF` via USB |
+| **Connessione USB** | Non avviata | Bridge seriale `/dev/esp32` @ 115200 baud, auto-reconnect |
+| **NFC/Smartcard** | Non disponibile | Disponibile via ESP32 |
+| **Tab ESP32 e NFC nel pannello** | Nascosti automaticamente | Visibili |
+| **Reset relè all'avvio** | Tutti i relè portati a OFF | Non inviato (l'ESP32 mantiene il proprio stato) |
+
+### Effetto premere P1/P2/P3 — path completo
+
+Entrambi i backend producono esattamente lo stesso effetto: chiamata a `cmdRingPiano("P1"/"P2"/"P3")` che esegue:
+1. Unmute del microfono Mumble
+2. Riproduzione suono `ring` via TTS
+3. Messaggio Mumble all'utente del piano
+4. Notifica Pushover con snapshot telecamera
+5. SpotlightTrigger (60 secondi)
+
+Il guard `IsConnected` (Mumble connesso) è applicato in entrambi i path — il campanello non spara se Mumble è disconnesso.
+
+### Passare da RPi a ESP32
+
+1. Collega la scheda ESP32-S3 via USB — il sistema la vedrà come `/dev/esp32`
+2. Modifica `doorphoneserver.xml`: cambia `backend="rpi"` in `backend="esp32"`
+3. Riavvia il servizio: `sudo systemctl restart doorphoneserver`
+4. Verifica nel log: `[GPIO-USB] avviato` e `[USB] ESP32-S3 connesso su /dev/esp32`
+
+### Passare da ESP32 a RPi
+
+1. Modifica `doorphoneserver.xml`: cambia `backend="esp32"` in `backend="rpi"`
+2. Riavvia il servizio
+3. Verifica nel log: `info: IO backend = RPi — ESP32/USB/NFC disabilitati`
+
+---
+
+## 10. Variabili d'ambiente (.env)
 
 `/home/doorphoneserver/.env` — scritto dal wizard, permessi 600. Non versionato.
 
@@ -682,7 +792,7 @@ sudo systemctl restart doorphoneserver
 
 ---
 
-## 10. Struttura file sul sistema
+## 11. Struttura file sul sistema
 
 ```
 /home/doorphoneserver/              ← home utente di sistema E repo Git
@@ -718,7 +828,7 @@ sudo systemctl restart doorphoneserver
 
 ---
 
-## 11. Comandi utili
+## 12. Comandi utili
 
 ### Gestione servizio
 
@@ -767,7 +877,7 @@ sudo log2ram sync                       # forza sync RAM → disco
 
 ---
 
-## 12. Aggiornamento e rebuild
+## 13. Aggiornamento e rebuild
 
 Per aggiornare il software dopo l'installazione iniziale:
 
@@ -789,7 +899,7 @@ Il build script ferma il servizio, compila (~5–15 minuti su Pi 4), installa il
 
 ---
 
-## 13. Problemi comuni
+## 14. Problemi comuni
 
 ### `ModuleNotFoundError: No module named 'flask'`
 ```bash
@@ -842,9 +952,31 @@ sudo chmod 600 /home/doorphoneserver/.env
 
 ---
 
-## 14. Pannello Web — NFC Whitelist
+## 15. Pannello Web — NFC Whitelist
 
-La pagina **NFC Whitelist** del pannello web (tab "NFC Whitelist") permette di gestire i badge autorizzati ad aprire la porta. Richiede la scheda ESP32-S3 collegata via USB.
+La pagina **NFC Whitelist** del pannello web (tab "NFC Whitelist") permette di gestire i badge autorizzati ad aprire la porta. Richiede la scheda ESP32-S3 collegata via USB (`backend="esp32"`).
+
+---
+
+### Architettura di sicurezza RFID — doppio livello
+
+L'accesso con badge è protetto da **due controlli indipendenti**:
+
+```
+Utente avvicina badge → ESP32 (Livello 1) → Pi (Livello 2) → Portone
+```
+
+**Livello 1 — ESP32 (crittografico):**
+- Tag PLAIN (MIFARE Classic, NTAG): lettura UID
+- Tag DESFire EV3: autenticazione AES-128 a 3 passi — l'ESP32 verifica che il tag contenga la chiave corretta prima di dichiarare `UID-OK`
+- Risponde `UID-OK` o `UID-KO`
+
+**Livello 2 — Pi (policy):**
+- Controlla che l'UID sia nella whitelist JSON locale
+- Controlla che il tag non sia disabilitato
+- Solo se entrambi i controlli passano → invia `SET unlockdoor pulse` all'ESP32 → portone aperto
+
+**Conseguenza:** un tag con la chiave AES corretta (autenticato da ESP32) ma rimosso dalla whitelist Pi, o disabilitato, **non apre il portone**. I due livelli sono indipendenti.
 
 ---
 
@@ -859,10 +991,11 @@ La pagina è divisa in due aree:
 | **UID** | Identificativo unico del tag (14 cifre hex, es. `1C7D223E000000`) |
 | **Nominativo** | Nome del titolare assegnato in fase di registrazione |
 | **Tipo** | `PLAIN` (MIFARE Classic, NTAG) oppure `DESFIRE` (DESFire EV1/EV2/EV3) |
+| **Stato** | **ATTIVO** (verde) — tag può aprire il portone; **DISABILITATO** (rosso) — accesso bloccato |
 | **Aggiunto il** | Data e ora di registrazione |
 | **Ultimo accesso** | Data e ora dell'ultimo passaggio autorizzato (`—` se mai usato) |
 | **Accessi** | Contatore totale degli accessi autorizzati |
-| **Azioni** | Pulsanti Modifica e Rimuovi |
+| **Azioni** | Pulsanti Abilita/Disabilita, Modifica, Rimuovi |
 
 **Log USB seriale** — finestra in tempo reale con tutti i messaggi scambiati tra Raspberry Pi e ESP32. Utile per diagnostica. Supporta auto-refresh e pulsante Clear.
 
@@ -1023,6 +1156,25 @@ Il pulsante **Annulla** è sempre visibile durante il processo. Cliccarlo:
 
 ---
 
+### Abilitare / Disabilitare un tag
+
+Clicca **Disabilita** per bloccare l'accesso di un tag **senza rimuoverlo dalla whitelist**. Il badge rimane registrato sull'ESP32 (continua a passare il controllo crittografico) ma il Pi nega l'apertura del portone al Livello 2.
+
+Clicca **Abilita** per ripristinare l'accesso.
+
+**Quando usare disabilita invece di rimuovi:**
+- Accesso temporaneamente sospeso (es. dipendente in ferie, manutenzione)
+- Si vuole conservare la storia degli accessi
+- Si prevede di riabilitare in futuro
+
+**Quando usare rimuovi:**
+- Accesso revocato definitivamente
+- Il badge è stato smarrito o rubato (in questo caso rimuovi anche dall'ESP32 tramite il pulsante Sync/Rimuovi, così la chiave AES non è più valida)
+
+> La colonna **Stato** mostra in rosso "DISABILITATO" e la riga è visualizzata in semitrasparenza per indicare visivamente i tag inattivi.
+
+---
+
 ### Modificare un tag
 
 Clicca **Modifica** sulla riga del tag. Si apre un modale con il campo nome pre-compilato. Modifica il nominativo e clicca **Salva**. Solo il nome è modificabile — l'UID e il tipo sono immutabili.
@@ -1076,11 +1228,26 @@ Cancella in un colpo solo tutti i tag sia dal JSON che dalla NVS dell'ESP32 (com
 | ESP32-S3 | NVS flash (namespace `nfc_wl`) | Sopravvive ai riavvii, max 10 tag |
 | Sincronizzazione | Automatica ad ogni aggiunta/rimozione | Manuale con il pulsante Sync |
 
----
+**Formato entry in `nfc_whitelist.json`:**
+```json
+{
+  "1C7D223E000000": {
+    "name": "Mario Rossi",
+    "type": "DESFIRE",
+    "added_at": "2026-06-14T09:00:00Z",
+    "last_access": "2026-06-14T10:30:00Z",
+    "access_count": 5,
+    "disabled": false
+  }
+}
+```
+Il campo `disabled` è omesso dal JSON quando è `false` (tag abilitato). Questo garantisce la compatibilità con file JSON creati prima dell'introduzione del campo — un tag senza `disabled` viene trattato come abilitato.
 
 ---
 
-## 15. Pannello Web — Tab ESP32: Occupanti Piano
+---
+
+## 16. Pannello Web — Tab ESP32: Occupanti Piano
 
 Il tab **ESP32** del pannello web include una sezione **Occupanti Piano** che permette di impostare i nominativi visualizzati sul display fisico collegato all'ESP32.
 
@@ -1110,4 +1277,4 @@ Per i dettagli del protocollo e l'implementazione firmware vedi [`Docs/esp32-flo
 
 ---
 
-*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4*
+*DoorPhoneServer — Setup Wizard v2.0.0 — Go 1.24.4 — Backend IO: RPi GPIO / ESP32-S3 USB*

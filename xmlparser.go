@@ -124,15 +124,13 @@ type ConfigStruct struct {
 				Loglevel                string        `xml:"loglevel"`
 				LogMaxSizeMB            int           `xml:"logmaxsizemb"`
 				LogRetentionDays        int           `xml:"logretentiondays"`
-				CancellableStream       bool          `xml:"cancellablestream"`
 				StreamOnStart           bool          `xml:"streamonstart"`
 				StreamOnStartAfter      time.Duration `xml:"streamonstartafter"`
 				StreamSendMessage       bool          `xml:"streamsendmessage"`
 				TXOnStart               bool          `xml:"txonstart"`
 				TXOnStartAfter          time.Duration `xml:"txonstartafter"`
-				RepeatTXTimes           int           `xml:"repeattxtimes"`
-				RepeatTXDelay           time.Duration `xml:"repeattxdelay"`
 				SimplexWithMute         bool          `xml:"simplexwithmute"`
+				VoiceActivityTimermsecs  time.Duration `xml:"voiceactivitytimermsecs"`
 			} `xml:"settings"`
 			TTS struct {
 				Enabled     bool   `xml:"enabled,attr"`
@@ -207,24 +205,6 @@ type ConfigStruct struct {
 			}
 
 
-			PrintVariables struct {
-				PrintAccount        bool `xml:"printaccount"`
-				PrintSystemSettings bool `xml:"printsystemsettings"`
-				PrintProvisioning   bool `xml:"printprovisioning"`
-				PrintTTS            bool `xml:"printtts"`
-				PrintSounds         bool `xml:"printsounds"`
-				PrintTxTimeout      bool `xml:"printtxtimeout"`
-				PrintHTTPAPI        bool `xml:"printhttpapi"`
-				PrintMQTT           bool `xml:"printmqtt"`
-				PrintHardware       bool `xml:"printhardware"`
-				PrintPins           bool `xml:"printpins"`
-				PrintPulse          bool `xml:"printpulse"`
-				PrintHeartBeat      bool `xml:"printheartbeat"`
-				PrintComment        bool `xml:"printcomment"`
-				PrintAudioRecord    bool `xml:"printaudiorecord"`
-				PrintKeyboardMap    bool `xml:"printkeyboardmap"`
-				PrintMultimedia     bool `xml:"printmultimedia"`
-			} `xml:"printvariables"`
 			Tablet struct {
 				Enabled bool `xml:"enabled,attr"`
 				P1      struct {
@@ -258,47 +238,30 @@ type ConfigStruct struct {
 			} `xml:"tablet"`
 		} `xml:"software"`
 		Hardware struct {
-			VoiceActivityTimermsecs time.Duration `xml:"voiceactivitytimermsecs"`
 			IO                      struct {
+				Backend string `xml:"backend,attr"`
 				Pins struct {
-					Pin []struct {
-						Direction string `xml:"direction,attr"`
-						Device    string `xml:"device,attr"`
-						Name      string `xml:"name,attr"`
-						PinNo     uint   `xml:"pinno,attr"`
-						Type      string `xml:"type,attr"`
-						ID        int    `xml:"chipid,attr"`
-						Enabled   bool   `xml:"enabled,attr"`
-						Log       bool   `xml:"log,attr"`
-					} `xml:"pin"`
+					Input []struct {
+						Name    string `xml:"name,attr"`
+						PinNo   uint   `xml:"pinno,attr"`
+						Enabled bool   `xml:"enabled,attr"`
+						Log     bool   `xml:"log,attr"`
+						Desc    string `xml:"desc,attr"`
+					} `xml:"input>pin"`
+					Output []struct {
+						Name    string `xml:"name,attr"`
+						PinNo   uint   `xml:"pinno,attr"`
+						Enabled bool   `xml:"enabled,attr"`
+						Log     bool   `xml:"log,attr"`
+						Desc    string `xml:"desc,attr"`
+					} `xml:"output>pin"`
 				} `xml:"pins"`
 				Pulse struct {
 					Leading  time.Duration `xml:"leadingmsecs,attr"`
 					Pulse    time.Duration `xml:"pulsemsecs,attr"`
 					Trailing time.Duration `xml:"trailingmsecs,attr"`
 				} `xml:"pulse"`
-
-				Sonoff struct {
-					Enabled bool `xml:"enabled,attr"`
-					Device  []struct {
-						Name    string `xml:"name,attr"`
-						Type    string `xml:"type,attr"`
-						Url     string `xml:"url,attr"`
-						Enabled bool   `xml:"enabled,attr"`
-						Log     bool   `xml:"log,attr"`
-						Desc    string `xml:"desc,attr"`
-						Status  string `xml:"status,attr"`
-					} `xml:"device"`
-				} `xml:"sonoff"`
 			} `xml:"io"`
-			HeartBeat struct {
-				Enabled     bool   `xml:"enabled,attr"`
-				LEDPin      string `xml:"heartbeatledpin"`
-				Periodmsecs int    `xml:"periodmsecs"`
-				LEDOnmsecs  int    `xml:"ledonmsecs"`
-				LEDOffmsecs int    `xml:"ledoffmsecs"`
-			} `xml:"heartbeat"`
-
 		} `xml:"hardware"`
 	} `xml:"global"`
 }
@@ -370,18 +333,12 @@ var ConfigXMLFile string
 
 // Generic Global State Variables
 // Variabili atomiche per lo stato globale del sistema, accessibili in modo thread-safe.
-// KillHeartBeat segnala l'arresto del LED heartbeat.
 // IsPlayStream indica se è in corso la riproduzione di uno stream audio.
 // IsConnected indica se il client è connesso al server Mumble.
 // Streaming indica se lo streaming audio locale è attivo.
 // HTTPServRunning indica se il server HTTP API è in esecuzione.
 // NowStreaming indica se lo streaming verso il canale Mumble è attivo.
-// InStreamTalking indica se un utente sta parlando durante lo streaming.
-// InStreamSource indica se la sorgente dello stream è attiva.
-// HeartBeatCount contiene il contatore dei battiti del LED heartbeat.
-// HeartBeatLastTime contiene il timestamp Unix dell'ultimo heartbeat.
 var (
-	KillHeartBeat        atomic.Bool
 	IsPlayStream         atomic.Bool
 	IsConnected          atomic.Bool
 	Streaming            atomic.Bool
@@ -390,8 +347,6 @@ var (
 	InStreamTalking      atomic.Bool
 	InStreamSource       atomic.Bool
 	MumbleServiceStopped atomic.Bool // set when user intentionally stops mumble-server from web panel
-	HeartBeatCount       atomic.Int64
-	HeartBeatLastTime    atomic.Int64
 )
 
 // Generic Global Counter Variables
@@ -583,8 +538,8 @@ func readxmlconfig(file string, reloadxml bool) error {
 	}
 
 	if !reloadxml {
-		if Config.Global.Hardware.VoiceActivityTimermsecs == 0 {
-			Config.Global.Hardware.VoiceActivityTimermsecs = 200
+		if Config.Global.Software.Settings.VoiceActivityTimermsecs == 0 {
+			Config.Global.Software.Settings.VoiceActivityTimermsecs = 200
 		}
 	}
 
@@ -620,21 +575,12 @@ func readxmlconfig(file string, reloadxml bool) error {
 			}
 		}
 
-		Config.Global.Software.Settings.CancellableStream = ReConfig.Global.Software.Settings.CancellableStream
 		Config.Global.Software.Settings.StreamSendMessage = ReConfig.Global.Software.Settings.StreamSendMessage
-		Config.Global.Software.Settings.RepeatTXTimes = ReConfig.Global.Software.Settings.RepeatTXTimes
-		Config.Global.Software.Settings.RepeatTXDelay = ReConfig.Global.Software.Settings.RepeatTXDelay
 		Config.Global.Software.Settings.SimplexWithMute = ReConfig.Global.Software.Settings.SimplexWithMute
 		Config.Global.Software.TTS = ReConfig.Global.Software.TTS
-Config.Global.Software.RemoteControl.HTTP.Enabled = ReConfig.Global.Software.RemoteControl.HTTP.Enabled
+		Config.Global.Software.RemoteControl.HTTP.Enabled = ReConfig.Global.Software.RemoteControl.HTTP.Enabled
 		Config.Global.Software.RemoteControl.HTTP.Command = ReConfig.Global.Software.RemoteControl.HTTP.Command
 		Config.Global.Software.RemoteControl.MQTT.Commands.Command = ReConfig.Global.Software.RemoteControl.MQTT.Commands.Command
-
-
-		Config.Global.Hardware.IO.Sonoff.Enabled = ReConfig.Global.Hardware.IO.Sonoff.Enabled
-		Config.Global.Hardware.IO.Sonoff.Device = ReConfig.Global.Hardware.IO.Sonoff.Device
-
-		Config.Global.Software.PrintVariables = ReConfig.Global.Software.PrintVariables
 	}
 	return nil
 }
@@ -674,50 +620,36 @@ func CheckConfigSanity(reloadxml bool) {
 	}
 
 
-	for index, gpio := range Config.Global.Hardware.IO.Pins.Pin {
+	validInputNames  := map[string]bool{"p1": true, "p2": true, "p3": true, "on_off": true}
+	validOutputNames := map[string]bool{"unlockdoor": true, "power_tablet": true}
+
+	for index, gpio := range Config.Global.Hardware.IO.Pins.Input {
 		if gpio.Enabled {
-
-			if !(gpio.Direction == "input" || gpio.Direction == "output") {
-				log.Printf("warn: Config Error [Section GPIO] Enabled GPIO Name %v Pin Number %v Direction %v Misconfiguired\n", gpio.Name, gpio.PinNo, gpio.Direction)
-				Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
+			if !validInputNames[gpio.Name] {
+				log.Printf("warn: Config Error [Section GPIO] Enabled Input GPIO Name %v Pin Number %v Invalid Name\n", gpio.Name, gpio.PinNo)
+				Config.Global.Hardware.IO.Pins.Input[index].Enabled = false
 				Warnings++
 			}
-
-			if (gpio.Direction == "input") && !(gpio.Device == "pushbutton" || gpio.Device == "toggleswitch" || gpio.Device == "rotaryencoder") {
-				log.Printf("warn: Config Error [Section GPIO] Enabled Input GPIO Name %v Pin Number %v Name Mis-Configured\n", gpio.Name, gpio.PinNo)
-				Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
-				Warnings++
-			}
-
-			if (gpio.Direction == "output") && !(gpio.Device == "led/relay") {
-				log.Printf("warn: Config Error [Section GPIO] Enabled Output GPIO Name %v Pin Number %v Name Mis-Configured\n", gpio.Name, gpio.PinNo)
-				Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
-				Warnings++
-			}
-
-			if !(gpio.Name == "heartbeat" || gpio.Name == "p1" || gpio.Name == "p2" || gpio.Name == "p3" || gpio.Name == "unlockdoor" || gpio.Name == "insidelight" || gpio.Name == "outsidelight" || gpio.Name == "power_tablet" || gpio.Name == "on_off") {
-				log.Printf("warn: Config Error [Section GPIO] Enabled GPIO Name %v Pin Number %v Invalid Name\n", gpio.Name, gpio.PinNo)
-				Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
-				Warnings++
-			}
-
 			if gpio.PinNo > 30 {
-				log.Printf("warn: Config Error [Section GPIO] Enabled GPIO Name %v Pin Number %v Invalid GPIO Number\n", gpio.Name, gpio.PinNo)
-				Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
+				log.Printf("warn: Config Error [Section GPIO] Enabled Input GPIO Name %v Pin Number %v Invalid GPIO Number\n", gpio.Name, gpio.PinNo)
+				Config.Global.Hardware.IO.Pins.Input[index].Enabled = false
 				Warnings++
 			}
+		}
+	}
 
-
-			if gpio.Name == "heartbeat" {
-				if Config.Global.Hardware.HeartBeat.Periodmsecs < 100 || Config.Global.Hardware.HeartBeat.LEDOnmsecs < 100 || Config.Global.Hardware.HeartBeat.LEDOffmsecs < 100 {
-					if gpio.PinNo == 0 {
-						log.Printf("warn: Config Error [Section GPIO] Name %v Invalid GPIO Pin %v Value\n", gpio.Name, gpio.PinNo)
-						Config.Global.Hardware.IO.Pins.Pin[index].Enabled = false
-						Warnings++
-					}
-				}
+	for index, gpio := range Config.Global.Hardware.IO.Pins.Output {
+		if gpio.Enabled {
+			if !validOutputNames[gpio.Name] {
+				log.Printf("warn: Config Error [Section GPIO] Enabled Output GPIO Name %v Pin Number %v Invalid Name\n", gpio.Name, gpio.PinNo)
+				Config.Global.Hardware.IO.Pins.Output[index].Enabled = false
+				Warnings++
 			}
-
+			if gpio.PinNo > 30 {
+				log.Printf("warn: Config Error [Section GPIO] Enabled Output GPIO Name %v Pin Number %v Invalid GPIO Number\n", gpio.Name, gpio.PinNo)
+				Config.Global.Hardware.IO.Pins.Output[index].Enabled = false
+				Warnings++
+			}
 		}
 	}
 

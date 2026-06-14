@@ -259,11 +259,25 @@ func (b *DoorPhoneServer) cmdUnlockDoor(P string) (string, error) {
 
 	log.Println("info: UNLOCK Requested from: " + P)
 
-	// Avvia una goroutine per gestire lo sblocco della porta in background
+	// Con backend ESP32 il comando viaggia su USB: se la scheda non è connessa il
+	// portone non può aprirsi, quindi ritorna errore invece di un falso successo
+	// (altrimenti il comando verrebbe accodato e scartato alla riconnessione).
+	if ioUseESP32() && (b.USBBridge == nil || !b.USBBridge.State.isConnected()) {
+		log.Printf("error: UNLOCK fallito — ESP32 non connesso")
+		return "", fmt.Errorf("ESP32 non connesso: impossibile aprire il portone")
+	}
+
+	// Avvia una goroutine per gestire lo sblocco della porta in background.
+	// Con backend ESP32 manda un singolo impulso (timing gestito dal firmware);
+	// con backend RPi tiene il relè attivo per unlockDoorHoldTime.
 	go func() {
-		GPIOOutPin("unlockdoor", "on")
-		time.Sleep(unlockDoorHoldTime)
-		GPIOOutPin("unlockdoor", "off")
+		if ioUseESP32() {
+			GPIOOutPin("unlockdoor", "pulse")
+		} else {
+			GPIOOutPin("unlockdoor", "on")
+			time.Sleep(unlockDoorHoldTime)
+			GPIOOutPin("unlockdoor", "off")
+		}
 		PushoverSendPushNotification("Unlock from: " + P)
 	}()
 
@@ -287,7 +301,12 @@ func (b *DoorPhoneServer) cmdUnlockDoor(P string) (string, error) {
 // @param name nome del pin GPIO da cercare nella configurazione XML
 // @return numero del pin GPIO, o -1 se non trovato
 func GetGPIO(name string) int {
-	for _, pin := range Config.Global.Hardware.IO.Pins.Pin {
+	for _, pin := range Config.Global.Hardware.IO.Pins.Output {
+		if pin.Name == name {
+			return int(pin.PinNo)
+		}
+	}
+	for _, pin := range Config.Global.Hardware.IO.Pins.Input {
 		if pin.Name == name {
 			return int(pin.PinNo)
 		}
@@ -298,6 +317,13 @@ func GetGPIO(name string) int {
 // InitPowerTabletState legge lo stato fisico del GPIO power_tablet e sincronizza
 // la variabile software isOn con la realtà hardware. Da chiamare all'avvio.
 func InitPowerTabletState() {
+	// Con backend ESP32 lo stato del tablet arriva dall'ESP32 via GET-STATE alla
+	// connessione USB: non leggiamo GPIO. La variabile resta false finché l'ESP32
+	// non risponde con STATE TABLET:ON/OFF.
+	if ioUseESP32() {
+		log.Printf("info: POWER TABLET initial state deferred to ESP32 STATE response")
+		return
+	}
 	gpioNumber := GetGPIO("power_tablet")
 	if gpioNumber == -1 {
 		return
@@ -312,6 +338,17 @@ func InitPowerTabletState() {
 	powerTabletState.isOn = (state == 0)
 	powerTabletState.mu.Unlock()
 	log.Printf("info: POWER TABLET initial state from GPIO: isOn=%v (gpio=%d)\n", powerTabletState.isOn, state)
+}
+
+// SyncPowerTabletStateFromESP32 allinea lo stato software del tablet a quello
+// reale riportato dall'ESP32 (messaggio STATE TABLET:ON/OFF). Senza questa sync
+// powerTabletState.isOn resterebbe fermo al valore impostato dall'ultimo comando
+// del Pi, e il controllo di ridondanza in cmdPowertabletWithSource potrebbe
+// scartare un comando legittimo (es. OFF quando il tablet è fisicamente ON).
+func SyncPowerTabletStateFromESP32(on bool) {
+	powerTabletState.mu.Lock()
+	powerTabletState.isOn = on
+	powerTabletState.mu.Unlock()
 }
 
 // cmdPowertablet_on attiva l'alimentazione del tablet impostando il pin GPIO "power_tablet" su off (logica invertita).
@@ -363,14 +400,30 @@ func (b *DoorPhoneServer) cmdPowertabletWithSource(action string, source string)
 		return nil
 	}
 
+	// Backend ESP32: senza connessione il comando andrebbe perso silenziosamente.
+	if ioUseESP32() && (b.USBBridge == nil || !b.USBBridge.State.isConnected()) {
+		err := fmt.Errorf("ESP32 non connesso")
+		log.Printf("warn: POWER TABLET %s ignorato — %v (source: %s)", strings.ToUpper(action), err, source)
+		appendHistory(false, "esp32 non connesso")
+		return err
+	}
+
 	// 3. Execute command
 	log.Printf("info: POWER TABLET %s (source: %s)", strings.ToUpper(action), source)
 
 	if action == "on" {
-		GPIOOutPin("power_tablet", "off") // Inverted logic
+		if ioUseESP32() {
+			if ioUSB != nil { ioUSB.TabletPower(true) }
+		} else {
+			GPIOOutPin("power_tablet", "off") // Inverted logic: relay attivo = LOW = tablet ON
+		}
 		powerTabletState.isOn = true
 	} else {
-		GPIOOutPin("power_tablet", "on") // Inverted logic
+		if ioUseESP32() {
+			if ioUSB != nil { ioUSB.TabletPower(false) }
+		} else {
+			GPIOOutPin("power_tablet", "on") // Inverted logic: relay inattivo = HIGH = tablet OFF
+		}
 		powerTabletState.isOn = false
 	}
 

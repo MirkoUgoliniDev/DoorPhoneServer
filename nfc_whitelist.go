@@ -24,6 +24,7 @@ type NFCEntry struct {
 	AddedAt     time.Time  `json:"added_at"`
 	LastAccess  *time.Time `json:"last_access"`
 	AccessCount int        `json:"access_count"`
+	Disabled    bool       `json:"disabled,omitempty"` // false (omesso) = abilitato; true = disabilitato
 }
 
 // EnrollSession traccia uno stato di enrollment in corso.
@@ -239,40 +240,52 @@ func (m *NFCWhitelistManager) HandleTagInfo(uid, rawType string) {
 	}
 }
 
-// HandleUIDOK gestisce "UID-OK": incrementa access_count per lastSeenUID.
-func (m *NFCWhitelistManager) HandleUIDOK() {
+// HandleUIDOK gestisce "UID-OK" dall'ESP32: verifica che l'UID sia nella whitelist
+// e non sia disabilitato, aggiorna i contatori e restituisce true se il portone
+// deve essere aperto, false altrimenti.
+func (m *NFCWhitelistManager) HandleUIDOK() bool {
+	// Consuma e azzera lastSeenUID atomicamente per evitare riusi stale.
 	m.seenMu.Lock()
 	uid := m.lastSeenUID
+	m.lastSeenUID = ""
 	m.seenMu.Unlock()
 
 	if uid == "" {
-		return
+		log.Printf("[NFC] UID-OK ricevuto ma lastSeenUID vuoto — portone non aperto")
+		return false
 	}
 
 	m.mu.Lock()
 	entry, ok := m.entries[uid]
-	if ok {
+	if ok && !entry.Disabled {
 		entry.AccessCount++
 		m.entries[uid] = entry
 	}
 	m.mu.Unlock()
 
-	if ok {
-		log.Printf("[NFC] accesso OK: uid=%s nome=%q count=%d", uid, entry.Name, entry.AccessCount)
-		if err := m.save(); err != nil {
-			log.Printf("[NFC] errore salvataggio access_count: %v", err)
-		}
-	} else {
-		log.Printf("[NFC] accesso OK: uid=%s (non nel JSON)", uid)
+	if !ok {
+		log.Printf("[NFC] ACCESSO NEGATO: uid=%s non in whitelist — portone non aperto", uid)
+		return false
 	}
+	if entry.Disabled {
+		log.Printf("[NFC] ACCESSO NEGATO: uid=%s nome=%q disabilitato — portone non aperto", uid, entry.Name)
+		return false
+	}
+
+	log.Printf("[NFC] accesso autorizzato: uid=%s nome=%q count=%d", uid, entry.Name, entry.AccessCount)
+	if err := m.save(); err != nil {
+		log.Printf("[NFC] errore salvataggio access_count: %v", err)
+	}
+	return true
 }
 
-// HandleUIDKO gestisce "UID-KO": logga il tentativo negato.
+// HandleUIDKO gestisce "UID-KO": logga il tentativo negato e azzera lastSeenUID.
 func (m *NFCWhitelistManager) HandleUIDKO() {
 	m.seenMu.Lock()
 	uid := m.lastSeenUID
+	m.lastSeenUID = ""
 	m.seenMu.Unlock()
-	log.Printf("[NFC] accesso NEGATO: uid=%s", uid)
+	log.Printf("[NFC] accesso NEGATO dall'ESP32: uid=%s", uid)
 }
 
 // HandleTagEnrolled gestisce "TAG-ENROLLED <uid> <PLAIN|DESFIRE>".
@@ -280,6 +293,11 @@ func (m *NFCWhitelistManager) HandleUIDKO() {
 func (m *NFCWhitelistManager) HandleTagEnrolled(uid, tagType string) {
 	uid = strings.ToUpper(uid)
 	tagType = strings.ToUpper(tagType)
+
+	if !uidRegex.MatchString(uid) {
+		log.Printf("[NFC] TAG-ENROLLED ignorato: UID non valido %q", uid)
+		return
+	}
 
 	m.enrollMu.Lock()
 	session := m.enrollSession
@@ -428,6 +446,7 @@ func (m *NFCWhitelistManager) List() []map[string]interface{} {
 			"added_at":     e.AddedAt,
 			"last_access":  e.LastAccess,
 			"access_count": e.AccessCount,
+			"disabled":     e.Disabled,
 		})
 	}
 	return result
@@ -453,6 +472,24 @@ func (m *NFCWhitelistManager) Update(uid string, name *string) error {
 		}
 		entry.Name = *name
 	}
+	m.entries[uid] = entry
+	m.mu.Unlock()
+	return m.save()
+}
+
+// SetDisabled abilita o disabilita un tag senza rimuoverlo dalla whitelist.
+func (m *NFCWhitelistManager) SetDisabled(uid string, disabled bool) error {
+	uid = strings.ToUpper(uid)
+	if err := m.validateUID(uid); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	entry, ok := m.entries[uid]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("tag non trovato")
+	}
+	entry.Disabled = disabled
 	m.entries[uid] = entry
 	m.mu.Unlock()
 	return m.save()
@@ -608,6 +645,12 @@ func (b *DoorPhoneServer) handleWhitelistEnrollStart(w http.ResponseWriter, r *h
 		ackKey = "ACK-ENROLL"
 	}
 
+	if b.USBBridge == nil {
+		b.NFCWhitelist.AbortEnroll()
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"ESP32 non disponibile (backend=rpi)"}`)
+		return
+	}
 	_, ok := b.USBBridge.SendAndWait(cmd, ackKey, 3*time.Second)
 	if !ok {
 		b.NFCWhitelist.AbortEnroll()
@@ -687,6 +730,11 @@ func (b *DoorPhoneServer) handleWhitelistSync(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if b.USBBridge == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"ESP32 non disponibile (backend=rpi)"}`)
+		return
+	}
 	tags, err := b.USBBridge.SendTagList(5 * time.Second)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -751,7 +799,7 @@ func (b *DoorPhoneServer) handleWhitelistDelete(w http.ResponseWriter, r *http.R
 	removedFromJSON := false
 
 	// Tenta TAG-DEL su ESP32 solo per UID a 14 char (formato valido firmware)
-	if uidRegex.MatchString(uid) {
+	if uidRegex.MatchString(uid) && b.USBBridge != nil {
 		resp, ok := b.USBBridge.SendAndWait("TAG-DEL "+uid+"\n", "TAG-DEL", 3*time.Second)
 		if !ok {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -783,6 +831,47 @@ func (b *DoorPhoneServer) handleWhitelistDelete(w http.ResponseWriter, r *http.R
 		uid, removedFromESP32, removedFromJSON)
 }
 
+// POST /api/whitelist/{uid}/toggle — abilita o disabilita un tag senza rimuoverlo.
+func (b *DoorPhoneServer) handleWhitelistToggle(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+
+	uid := strings.ToUpper(strings.TrimSpace(
+		strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/whitelist/"), "/toggle"),
+	))
+	if uid == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":"UID mancante"}`)
+		return
+	}
+
+	var req struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":"json non valido"}`)
+		return
+	}
+
+	if err := b.NFCWhitelist.SetDisabled(uid, req.Disabled); err != nil {
+		if strings.Contains(err.Error(), "non trovato") {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+
+	action := "abilitato"
+	if req.Disabled {
+		action = "disabilitato"
+	}
+	log.Printf("[NFC] tag %s %s", uid, action)
+	fmt.Fprintf(w, `{"ok":true,"uid":%q,"disabled":%v}`, uid, req.Disabled)
+}
+
 // ClearAll rimuove tutti i tag dalla whitelist JSON.
 func (m *NFCWhitelistManager) ClearAll() error {
 	m.mu.Lock()
@@ -800,8 +889,11 @@ func (b *DoorPhoneServer) handleWhitelistClearAll(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Invia TAG-CLEAR all'ESP32 e attendi ACK (timeout 5s)
-	_, esp32ok := b.USBBridge.SendAndWait("TAG-CLEAR\n", "ACK-CLEAR", 5*time.Second)
+	// Invia TAG-CLEAR all'ESP32 e attendi ACK (timeout 5s), solo se il bridge è attivo.
+	var esp32ok bool
+	if b.USBBridge != nil {
+		_, esp32ok = b.USBBridge.SendAndWait("TAG-CLEAR\n", "ACK-CLEAR", 5*time.Second)
+	}
 
 	// Cancella JSON locale indipendentemente dall'ESP32
 	if err := b.NFCWhitelist.ClearAll(); err != nil {

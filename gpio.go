@@ -61,6 +61,51 @@ func detectGPIOSysfsBase() uint {
 	return 0
 }
 
+// ioUseESP32 indica se il backend IO configurato è l'ESP32-S3 via USB
+// (attributo backend="esp32" su <io>). Valore vuoto o "rpi" → GPIO del Raspberry.
+// È l'unico interruttore che instrada input e output verso uno dei due backend.
+func ioUseESP32() bool {
+	return strings.EqualFold(Config.Global.Hardware.IO.Backend, "esp32")
+}
+
+// gpioNameByNumber risolve il nome del pin a partire dal numero BCM, secondo la
+// configurazione XML. Restituisce stringa vuota se non trovato.
+func gpioNameByNumber(pinNumber int) string {
+	for _, pin := range Config.Global.Hardware.IO.Pins.Output {
+		if int(pin.PinNo) == pinNumber {
+			return pin.Name
+		}
+	}
+	for _, pin := range Config.Global.Hardware.IO.Pins.Input {
+		if int(pin.PinNo) == pinNumber {
+			return pin.Name
+		}
+	}
+	return ""
+}
+
+// esp32PinState restituisce lo stato logico di un pin quando il backend IO è
+// l'ESP32-S3. Per "power_tablet" usa lo stato TABLET riportato dall'ESP32
+// (logica invertita: tablet ON = relay attivo = 0); per gli altri pin legge la
+// mappa stati popolata dagli eventi EVT.
+func esp32PinState(pinNumber int) (int, error) {
+	if ioUSB == nil {
+		return -1, fmt.Errorf("ESP32 IO non inizializzato")
+	}
+	name := gpioNameByNumber(pinNumber)
+	if name == "power_tablet" {
+		if ioUSB.bridge.State.getTablet() {
+			return 0, nil
+		}
+		return 1, nil
+	}
+	_, pins, _ := ioUSB.bridge.State.snapshot()
+	if v, ok := pins[name]; ok {
+		return v, nil
+	}
+	return -1, fmt.Errorf("stato pin %q non disponibile da ESP32", name)
+}
+
 // pianoButton raggruppa lo stato di un singolo pulsante campanello per piano.
 type pianoButton struct {
 	used  bool
@@ -81,6 +126,14 @@ var pianoButtons = []*pianoButton{
 // le goroutine di monitoraggio per i pulsanti dei campanelli dei piani.
 func (b *DoorPhoneServer) initGPIO() {
 
+	// Con backend ESP32 gli input arrivano via USB (vedi GPIOUsb.Run): nessun
+	// setup dei pin del Raspberry.
+	if ioUseESP32() {
+		log.Printf("info: IO backend = ESP32-S3 (USB) — GPIO del Raspberry disabilitati")
+		b.GPIOEnabled = false
+		return
+	}
+
 	if err := rpio.Open(); err != nil {
 		log.Println("error: GPIO Error, ", err)
 		b.GPIOEnabled = false
@@ -90,15 +143,11 @@ func (b *DoorPhoneServer) initGPIO() {
 	b.GPIOEnabled = true
 
 	//handle inputs on RPI GPIO
-	for _, io := range Config.Global.Hardware.IO.Pins.Pin {
-
-		//log.Printf("debug: GPIO Setup Input Device[%v]-Name[%v]-PinNo[%v]-Direction[%v]-Enabled[%v]", io.Device, io.Name, io.PinNo, io.Direction, io.Enabled)
-
-		if io.Enabled && io.Direction == "input" && io.Type == "gpio" {
-
+	for _, io := range Config.Global.Hardware.IO.Pins.Input {
+		if io.Enabled && io.PinNo > 0 {
 			for _, pb := range pianoButtons {
-				if io.Name == strings.ToLower(pb.name) && io.PinNo > 0 {
-					log.Printf("debug: GPIO Setup Input Device %v Name %v PinNo %v", io.Device, io.Name, io.PinNo)
+				if io.Name == strings.ToLower(pb.name) {
+					log.Printf("debug: GPIO Setup Input Name %v PinNo %v", io.Name, io.PinNo)
 					p := rpio.Pin(io.PinNo)
 					p.PullUp()
 					pb.used = true
@@ -106,9 +155,7 @@ func (b *DoorPhoneServer) initGPIO() {
 					break
 				}
 			}
-
 		}
-
 	}
 
 	// rpio.Close() rimossa: chiudeva il driver GPIO prima di gpio.NewInput()
@@ -158,24 +205,28 @@ func (b *DoorPhoneServer) runPianoButtonLoop(pb *pianoButton) {
 // @param command comando da eseguire: "on", "off" o "pulse"
 func GPIOOutPin(name string, command string) {
 
-	for _, io := range Config.Global.Hardware.IO.Pins.Pin {
+	// Backend ESP32: inoltra il comando via USB ("SET <name> on|off|pulse").
+	if ioUseESP32() {
+		if ioUSB != nil {
+			ioUSB.SetPin(name, command)
+		}
+		return
+	}
 
-		if io.Enabled && io.Direction == "output" && io.Name == name {
-
+	for _, io := range Config.Global.Hardware.IO.Pins.Output {
+		if io.Enabled && io.Name == name {
 			if command == "on" {
 				if io.Log {
 					log.Printf("debug: Turning On %v at pin %v Output GPIO\n", io.Name, io.PinNo)
 				}
 				gpio.NewOutput(io.PinNo+gpioSysfsOffset, true)
 			}
-
 			if command == "off" {
 				if io.Log {
 					log.Printf("debug: Turning Off %v at pin %v Output GPIO\n", io.Name, io.PinNo)
 				}
 				gpio.NewOutput(io.PinNo+gpioSysfsOffset, false)
 			}
-
 			if command == "pulse" {
 				if io.Log {
 					log.Printf("debug: Pulsing %v at pin %v Output GPIO\n", io.Name, io.PinNo)
@@ -187,7 +238,6 @@ func GPIOOutPin(name string, command string) {
 				gpio.NewOutput(io.PinNo+gpioSysfsOffset, false)
 				time.Sleep(Config.Global.Hardware.IO.Pulse.Trailing * time.Millisecond)
 			}
-
 		}
 	}
 }
@@ -197,8 +247,20 @@ func GPIOOutPin(name string, command string) {
 // @param command comando da eseguire su tutti i pin: "on" o "off"
 func GPIOOutAll(name string, command string) {
 
-	for _, io := range Config.Global.Hardware.IO.Pins.Pin {
-		if io.Enabled && io.Direction == "output" && io.Device == "led/relay" {
+	// Backend ESP32: inoltra il comando a ogni pin di uscita abilitato.
+	if ioUseESP32() {
+		if ioUSB != nil {
+			for _, io := range Config.Global.Hardware.IO.Pins.Output {
+				if io.Enabled {
+					ioUSB.SetPin(io.Name, command)
+				}
+			}
+		}
+		return
+	}
+
+	for _, io := range Config.Global.Hardware.IO.Pins.Output {
+		if io.Enabled {
 			if command == "on" {
 				log.Printf("debug: Turning On %v Output GPIO\n", io.Name)
 				gpio.NewOutput(io.PinNo+gpioSysfsOffset, true)
@@ -216,6 +278,10 @@ func GPIOOutAll(name string, command string) {
 // @return 0 se basso, 1 se alto, -1 in caso di errore; errore se non leggibile
 func GetGPIOState(pinNumber int) (int, error) {
 	var resultStatus int
+
+	if ioUseESP32() {
+		return esp32PinState(pinNumber)
+	}
 
 	if err := rpio.Open(); err != nil {
 		return -1, fmt.Errorf("failed to open rpio: %v", err)
@@ -250,6 +316,19 @@ func SetGPIOState(device string, status string) (string, error) {
 	var resultStatus int
 
 	GPIOOutPin(device, status)
+
+	// Backend ESP32: lo stato si legge dallo stato riportato via USB, non da rpio.
+	if ioUseESP32() {
+		st, err := GetGPIOState(GetGPIO(device))
+		if err != nil {
+			return "", err
+		}
+		data, err := json.Marshal(map[string]int{device: st})
+		if err != nil {
+			return "", fmt.Errorf("error marshalling response to JSON: %w", err)
+		}
+		return string(data), nil
+	}
 
 	err := rpio.Open()
 	if err != nil {

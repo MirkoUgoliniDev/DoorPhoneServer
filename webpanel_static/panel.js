@@ -1642,6 +1642,15 @@ function loadSysInfo(){
 }
 
 // --- Init ---
+fetch('/panel/api/features').then(r=>r.json()).then(f=>{
+  if(!f.esp32){
+    ['esp32','nfcwhitelist'].forEach(page=>{
+      const tab=document.querySelector('.tab[data-page="'+page+'"]');
+      if(tab) tab.style.display='none';
+    });
+  }
+}).catch(()=>{});
+
 updateDashboard();
 setInterval(updateDashboard,3000);
 loadAlarmConfig();
@@ -1860,6 +1869,7 @@ const l2rHist={sdWrites:[],ramSize:[],ioPct:[]};
 const l2rHistMax=60;
 const l2rShow={sdWrites:true,ramSize:true,ioPct:true};
 let l2rPollTimer=null;
+let l2rIsActive=false; // true quando log2ram è installato, attivo e /var/log su tmpfs
 
 function loadLog2Ram(){
   fetch('/panel/api/log2ram/status').then(r=>r.json()).then(renderL2RStatus).catch(()=>{});
@@ -1887,6 +1897,7 @@ function renderL2RStatus(d){
   else{color='#22c55e';label='Attivo — /var/log su RAM, journal volatile';}
   dot.style.background=color;
   txt.textContent=label;
+  l2rIsActive = !!(d.installed && d.active && d.log2ram_mount);
 
   // mostra bottone Installa solo se non installato, nasconde sync/restart
   const btnInstall=document.getElementById('l2rBtnInstall');
@@ -1963,21 +1974,30 @@ function updateL2RMetrics(){
       l2rHist.ioPct.push(arr[i].sd_io_pct||0);
     }
     drawL2RChart();
-    renderL2RStats(arr[arr.length-1]);
+    renderL2RStats(arr[arr.length-1], l2rHist.sdWrites);
   }).catch(()=>{});
 }
 
-function renderL2RStats(m){
+function renderL2RStats(m, recentDeltas){
   const grid=document.getElementById('l2rStatsGrid');
   if(!grid)return;
   const uptimeH=(m.uptime_sec/3600).toFixed(1);
-  const mbPerDay=m.uptime_sec>0?((m.sd_write_mb/m.uptime_sec)*86400).toFixed(0):'—';
+  // Usa il rate recente (ultimi campioni del grafico) per la stima giornaliera,
+  // evitando che la burst di scrittura al boot distorca la media.
+  // Ogni campione è un delta di 10s; la media dei campioni recenti × 8640 = MB/giorno.
+  let mbPerDay='—';
+  if(recentDeltas && recentDeltas.length>=2){
+    const window=recentDeltas.slice(-12); // ultimi ~2 minuti (12 campioni × 10s)
+    const avgPer10s=window.reduce((a,b)=>a+b,0)/window.length;
+    mbPerDay=(avgPer10s*8640).toFixed(0);
+  } else if(m.uptime_sec>0){
+    mbPerDay=((m.sd_write_mb/m.uptime_sec)*86400).toFixed(0);
+  }
   const baseline=4000;
   const saved=baseline-parseFloat(mbPerDay||0);
   // Efficienza e risparmio sono significativi solo se log2ram è attivo e montato
-  const l2rActive=document.getElementById('l2rDot')&&document.getElementById('l2rDot').style.background==='rgb(34, 197, 94)';
-  const effStr=l2rActive&&saved>0?(saved/baseline*100).toFixed(1)+'%':'N/D';
-  const savedStr=l2rActive&&saved>0?saved.toFixed(0)+' MB':'N/D';
+  const effStr=l2rIsActive&&saved>0?(saved/baseline*100).toFixed(1)+'%':'N/D';
+  const savedStr=l2rIsActive&&saved>0?saved.toFixed(0)+' MB':'N/D';
   const ioColor=m.sd_io_pct>30?'#ef4444':m.sd_io_pct>10?'#eab308':'#22c55e';
   grid.innerHTML=`
     <div class="sysinfo-chip">

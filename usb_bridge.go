@@ -506,9 +506,10 @@ func (b *USBBridge) dispatch(line string) {
 		b.State.addCard(ESP32CardLog{Time: time.Now(), Result: line})
 		b.drainOrSendCard(CardEvent{OK: true})
 		if b.nfcMgr != nil {
-			b.nfcMgr.HandleUIDOK()
-			// Flusso E: il Pi apre il portone dopo auth NFC OK
-			b.Send("SET unlockdoor pulse\n")
+			// Apre il portone solo se il tag è in whitelist e non disabilitato.
+			if b.nfcMgr.HandleUIDOK() {
+				b.Send("SET unlockdoor pulse\n")
+			}
 		}
 
 	case line == "UID-KO":
@@ -533,7 +534,10 @@ func (b *USBBridge) dispatch(line string) {
 					b.State.setFanPct(pct)
 				}
 			} else if strings.HasPrefix(part, "TABLET:") {
-				b.State.setTablet(strings.TrimPrefix(part, "TABLET:") == "ON")
+				on := strings.TrimPrefix(part, "TABLET:") == "ON"
+				b.State.setTablet(on)
+				// Allinea lo stato software del tablet a quello reale dell'ESP32.
+				SyncPowerTabletStateFromESP32(on)
 			}
 		}
 

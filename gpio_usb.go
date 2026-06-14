@@ -3,34 +3,51 @@ package doorphoneserver
 import (
 	"context"
 	"log"
+	"strings"
 )
 
-// GPIOUsb consuma eventi GPIO dall'ESP32-S3.
-// Fase debug: logga tutti gli eventi senza eseguire azioni.
-// Espone SetPin/SetPWM/Pulse per i comandi di output (pronti per la produzione).
+// GPIOUsb consuma eventi GPIO dall'ESP32-S3 ed espone i comandi di output
+// (SetPin/SetPWM/Pulse). Gli eventi di input vengono tradotti in azioni
+// (es. pressione pulsante piano → cmdRingPiano) solo quando il backend IO
+// configurato è l'ESP32 (vedi ioUseESP32); altrimenti restano solo loggati.
 type GPIOUsb struct {
 	bridge *USBBridge
+	srv    *DoorPhoneServer
 }
 
-// NewGPIOUsb crea il gestore GPIO USB.
-func NewGPIOUsb(bridge *USBBridge) *GPIOUsb {
-	return &GPIOUsb{bridge: bridge}
+// ioUSB è l'handle globale al backend IO su ESP32, usato dalle funzioni di
+// output package-level (GPIOOutPin/GPIOOutAll) quando backend="esp32".
+var ioUSB *GPIOUsb
+
+// NewGPIOUsb crea il gestore GPIO USB collegato al server per le azioni di input.
+func NewGPIOUsb(bridge *USBBridge, srv *DoorPhoneServer) *GPIOUsb {
+	return &GPIOUsb{bridge: bridge, srv: srv}
 }
 
 // Run avvia il loop di ricezione eventi. Blocca fino alla cancellazione del contesto.
 func (g *GPIOUsb) Run(ctx context.Context) {
-	log.Printf("[GPIO-USB] avviato — modalità debug (solo log)")
+	log.Printf("[GPIO-USB] avviato")
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("[GPIO-USB] fermato")
 			return
 		case evt := <-g.bridge.GpioEvt:
+			pressed := evt.Value == 0 // active-low: 0 = premuto
 			action := "rilasciato"
-			if evt.Value == 0 {
-				action = "premuto" // active-low: 0 = premuto
+			if pressed {
+				action = "premuto"
 			}
 			log.Printf("[GPIO-USB] pin=%s %s", evt.Pin, action)
+
+			// Solo con backend ESP32 gli eventi pulsante generano azioni,
+			// replicando il comportamento del loop GPIO del Raspberry.
+			if pressed && g.srv != nil && ioUseESP32() && IsConnected.Load() {
+				switch strings.ToLower(evt.Pin) {
+				case "p1", "p2", "p3":
+					g.srv.cmdRingPiano(strings.ToUpper(evt.Pin))
+				}
+			}
 		}
 	}
 }
@@ -54,6 +71,15 @@ func (g *GPIOUsb) SetPWM(name string, duty int) {
 // Pulse invia un comando pulse all'ESP32-S3.
 func (g *GPIOUsb) Pulse(name string) {
 	g.SetPin(name, "pulse")
+}
+
+// TabletPower invia TABLET-ON o TABLET-OFF all'ESP32-S3.
+func (g *GPIOUsb) TabletPower(on bool) {
+	if on {
+		g.bridge.Send("TABLET-ON\n")
+	} else {
+		g.bridge.Send("TABLET-OFF\n")
+	}
 }
 
 // itoa converte int in stringa senza import fmt.

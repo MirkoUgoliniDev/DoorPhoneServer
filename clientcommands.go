@@ -26,8 +26,12 @@ func FatalCleanUp(message string) {
 
 // CleanUp spegne tutte le periferiche GPIO e termina il programma in modo controllato.
 func CleanUp() {
-	// Spegnere tutti i GPIO configurati, se necessario
-	GPIOOutAll("led/relay", "off")
+	// Spegne i relè solo con backend RPi. Con ESP32 lo stato dei relè è gestito
+	// dalla scheda e non va azzerato allo shutdown del servizio (spegnerebbe il
+	// tablet ad ogni riavvio del doorphoneserver), coerentemente con ClientStart.
+	if !ioUseESP32() {
+		GPIOOutAll("led/relay", "off")
+	}
 	// Registrare il messaggio di terminazione
 	log.Println("SIGHUP Termination of Program Requested by User...shutting down doorphoneserver")
 	// Terminare il programma
@@ -40,7 +44,7 @@ func (b *DoorPhoneServer) Connect() {
 	IsConnected.Store(false)
 	IsPlayStream.Store(false)
 	NowStreaming.Store(false)
-	KillHeartBeat.Store(false)
+
 	var err error
 
 	_, err = gumble.DialWithDialer(new(net.Dialer), b.Address, b.Config, &b.TLSConfig)
