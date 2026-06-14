@@ -110,17 +110,17 @@
 			  
 				<pulse leadingmsecs="1000" pulsemsecs="1000" trailingmsecs="1000"/>
 
-			<pins enabled="true">
-       <input>
-        <pin name="p1"     pinno="22" enabled="true"  log="false" desc="Pulsante P1"/>
-        <pin name="p2"     pinno="27" enabled="true"  log="false" desc="Pulsante P2"/>
-        <pin name="p3"     pinno="17" enabled="true"  log="false" desc="Pulsante P3"/>
-       </input>
-       <output>
-        <pin name="unlockdoor"   pinno="5"  enabled="true"  log="false" desc="Unlock Main Door"/>
-        <pin name="power_tablet" pinno="19" enabled="true"  log="false" desc="Power Tablet"/>
-       </output>
-      </pins>
+  			<pins enabled="true">
+         <input>
+          <pin name="p1"     pinno="22" enabled="true"  log="false" desc="Pulsante P1"/>
+          <pin name="p2"     pinno="27" enabled="true"  log="false" desc="Pulsante P2"/>
+          <pin name="p3"     pinno="17" enabled="true"  log="false" desc="Pulsante P3"/>
+         </input>
+         <output>
+          <pin name="unlockdoor"   pinno="5"  enabled="true"  log="false" desc="Unlock Main Door"/>
+          <pin name="power_tablet" pinno="19" enabled="true"  log="false" desc="Power Tablet"/>
+         </output>
+        </pins>
 
 			</io>
 

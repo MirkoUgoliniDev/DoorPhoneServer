@@ -473,7 +473,7 @@ Installa anche il crontab per i riavvii notturni programmati.
 Aggiunge il repository APT di azlux.fr, installa log2ram, configura `/etc/log2ram.conf` con le dimensioni scelte e ottimizza `journald.conf` per storage volatile.
 
 #### Passo 14 — Pulizia
-Rimuove la cache Go dall'utente pi (`~/go/pkg/`) e pulisce la cache APT. Mostra un messaggio con il comando da eseguire per rimuovere la cartella di setup dopo aver chiuso il wizard.
+Rimuove la cache Go dall'utente pi (`~/go/pkg/`) e pulisce la cache APT. Inoltre **pianifica la rimozione automatica della cartella di setup** (il clone temporaneo da cui gira il wizard): poiché il wizard non può cancellare la cartella da cui è in esecuzione, la rimozione parte da sola appena fermi il wizard con `Ctrl+C`. La copia definitiva in `/home/doorphoneserver/` non viene toccata.
 
 ---
 
@@ -596,7 +596,9 @@ Se la connessione riesce, l'installazione è completata con successo.
 
 ### F6. Pulizia della cartella di setup
 
-Una volta verificato che tutto funziona, puoi rimuovere la cartella del wizard:
+La cartella temporanea del wizard (`~/doorphoneserver-setup`) viene **rimossa automaticamente** dal passo di Pulizia non appena fermi il wizard con `Ctrl+C` — non devi fare nulla. La copia definitiva in `/home/doorphoneserver/` resta in funzione.
+
+Se per qualche motivo la cartella fosse ancora presente, puoi rimuoverla a mano:
 
 ```bash
 rm -rf ~/doorphoneserver-setup

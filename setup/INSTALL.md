@@ -77,9 +77,26 @@ git clone https://github.com/MirkoUgoliniDev/DoorPhoneServer ~/doorphoneserver
 cd ~/doorphoneserver
 ```
 
-> **Nota:** il wizard userà questa directory come punto di partenza.
-> Il passo **Clone & Build** clonerà il repo direttamente in `/home/doorphoneserver/`
-> (la home dell'utente di servizio), rendendola una copia di sviluppo completa.
+### Perché due copie del repository?
+
+Durante l'installazione il codice finisce su disco in **due posizioni diverse**. Non è un errore: è dovuto al fatto che il programma gira come un **utente di servizio dedicato** (`doorphoneserver`), diverso da `pi`.
+
+| | Copia #1 (questa) | Copia #2 |
+|---|---|---|
+| **Percorso** | `~/doorphoneserver` (= `/home/pi/doorphoneserver`) | `/home/doorphoneserver/` |
+| **Proprietario** | `pi` | `doorphoneserver` (utente di servizio) |
+| **Scopo** | far **partire il wizard** | dove il binario viene **compilato ed eseguito** in produzione |
+| **Durata** | **temporanea** | **permanente** |
+
+Il motivo è un problema dell'uovo e la gallina:
+
+1. Quando fai SSH come `pi`, l'utente `doorphoneserver` e la sua home **non esistono ancora**: li crea il wizard più avanti. Quindi l'unico posto dove puoi mettere il codice per avviare il wizard è la home di `pi` → **questa copia (#1)**.
+2. Durante l'installazione, il passo **Crea utente di servizio** crea l'utente `doorphoneserver` e la sua home.
+3. Solo a quel punto il passo **Clone & Build** può popolare `/home/doorphoneserver/` con il codice (copia #2), compilare il binario ed eseguirlo come utente di servizio. La home **è** il repository git, identica a una macchina di sviluppo.
+
+> **La copia #1 è usa-e-getta.** A fine installazione, quando fermi il wizard con `Ctrl+C`, viene **rimossa automaticamente** dall'ultimo passo (Pulizia). Non serve cancellarla a mano. La copia #2 in `/home/doorphoneserver/` è quella definitiva e resta.
+>
+> *(Il wizard gira da dentro questa cartella, quindi non può cancellarla mentre è in esecuzione: la rimozione viene pianificata e parte appena chiudi il wizard.)*
 
 ---
 
