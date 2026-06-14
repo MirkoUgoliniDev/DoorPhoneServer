@@ -61,9 +61,23 @@ class StepSystemCheck(Step):
                     )
                 ok = False
 
+        # Connettività: prima ping ICMP, poi fallback HTTPS (è ciò che usano
+        # davvero apt e git). Molte reti/router bloccano l'ICMP pur avendo
+        # Internet perfettamente funzionante: senza il fallback si avrebbe un
+        # falso "NON RAGGIUNGIBILE".
         r, _ = runner.run(["ping", "-c", "1", "-W", "5", "8.8.8.8"], retries=1)
         if not r:
             r, _ = runner.run(["ping", "-c", "1", "-W", "5", "debian.org"], retries=1)
+        if not r:
+            r, _ = runner.run(
+                ["curl", "-fsS", "--max-time", "8", "-o", "/dev/null", "-I", "https://deb.debian.org"],
+                retries=1,
+            )
+        if not r:
+            r, _ = runner.run(
+                ["wget", "-q", "--spider", "--timeout=8", "https://github.com"],
+                retries=1,
+            )
         runner.log("  Internet : " + ("OK ✓" if r else "✗ NON RAGGIUNGIBILE"))
         if not r:
             ok = False

@@ -11,12 +11,17 @@ import os
 import re
 import math
 import json
+import time
 import queue
 import struct
 import subprocess
 import threading
 import logging
 from pathlib import Path
+
+# Pausa visiva (secondi) inserita tra un blocco e l'altro durante l'installazione,
+# così l'utente percepisce chiaramente quale step è appena terminato e quale parte.
+STEP_VISUAL_PAUSE = 0.6
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -139,8 +144,17 @@ HTML = r"""<!DOCTYPE html>
   @keyframes sec-flash { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 3px var(--accent)} }
   .sec-highlight{ animation:sec-flash .5s ease 2; }
   .sec-selected{ box-shadow:0 0 0 2px var(--accent); }
-  .card { border: 1px solid transparent; }
-  .card-running { border-color:var(--accent) !important; }
+  .card { border: 1px solid transparent; transition:background .25s, border-color .25s; }
+  @keyframes card-run-glow {
+    0%,100% { box-shadow:0 0 0 1px var(--accent), 0 0 10px 0 rgba(137,180,250,.30); }
+    50%     { box-shadow:0 0 0 3px var(--accent), 0 0 26px 5px rgba(137,180,250,.65); }
+  }
+  .card-running {
+    border-color:var(--accent) !important;
+    border-width:2px !important;
+    background:#2a2c44 !important;
+    animation:card-run-glow 1.3s ease-in-out infinite;
+  }
   .card-done    { border-color:var(--success) !important; }
   .card-failed  { border-color:var(--error) !important; }
   .progress-bar { transition:width .4s ease; }
@@ -1766,16 +1780,17 @@ def save_env():
     )
     env_path = Path(f"/home/{TK_USER}/.env")
     try:
-        # Usa sudo tee per scrivere il file (di proprietà di TK_USER)
+        # Usa sudo -n tee per scrivere il file (di proprietà di TK_USER).
+        # -n: mai prompt password (richiede NOPASSWD, vedi prerequisiti INSTALL.md).
         r = subprocess.run(
-            ["sudo", "tee", str(env_path)],
+            ["sudo", "-n", "tee", str(env_path)],
             input=content, capture_output=True, text=True
         )
         if r.returncode != 0:
             return jsonify({"ok": False, "error": r.stderr.strip() or "sudo tee fallito"})
         # 660 (non 640): così l'utente pi può salvare .env da VSCode
-        subprocess.run(["sudo", "chmod", "660", str(env_path)])
-        subprocess.run(["sudo", "chown", f"{TK_USER}:{TK_GROUP}", str(env_path)])
+        subprocess.run(["sudo", "-n", "chmod", "660", str(env_path)])
+        subprocess.run(["sudo", "-n", "chown", f"{TK_USER}:{TK_GROUP}", str(env_path)])
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -1849,6 +1864,11 @@ def start():
                     _broadcast({"type": "aborted"})
                     break
 
+                # Breve pausa visiva tra i blocchi: lascia un attimo per vedere lo
+                # stato finale del blocco precedente prima che parta il successivo.
+                if i > 0:
+                    time.sleep(STEP_VISUAL_PAUSE)
+
                 # Pausa per inserimento credenziali prima di scrivere .env
                 if step.name == "Credenziali .env" and not runner.dry_run:
                     _pause_event.clear()
@@ -1872,6 +1892,16 @@ def start():
                     ok = False
                 if not ok:
                     failed.append(step.name)
+                    # Un blocco CRITICO (non opzionale) fallito interrompe
+                    # l'installazione: proseguire sarebbe inutile (i passi
+                    # successivi fallirebbero a catena). I blocchi opzionali
+                    # (es. Log2Ram) invece non bloccano.
+                    if not getattr(step, "optional", False):
+                        _log_cb(
+                            f"\n✗ Blocco critico '{step.name}' fallito — "
+                            f"installazione interrotta. Risolvi il problema e rilancia."
+                        )
+                        break
         except Exception as exc:
             _log_cb(f"\n✗ ERRORE INATTESO nel runner: {exc}")
             logging.error(traceback.format_exc())

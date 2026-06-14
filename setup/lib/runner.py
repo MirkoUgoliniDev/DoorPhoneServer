@@ -50,10 +50,13 @@ class Runner:
         else:
             cmd_list = [str(c) for c in cmd]
 
+        # -n (non-interattivo): sudo non chiede mai la password. Se non è
+        # configurato il NOPASSWD, fallisce subito invece di bloccare il
+        # terminale in attesa di input (il wizard gira spesso dal browser).
         if user and os.geteuid() != 0:
-            cmd_list = ["sudo", "-E", "-H", "-u", user] + cmd_list
+            cmd_list = ["sudo", "-n", "-E", "-H", "-u", user] + cmd_list
         elif sudo and os.geteuid() != 0:
-            cmd_list = ["sudo"] + cmd_list
+            cmd_list = ["sudo", "-n"] + cmd_list
 
         display = " ".join(shlex.quote(c) for c in cmd_list)
 
@@ -112,7 +115,7 @@ class Runner:
                 self.log(f"  Tentativo {attempt}/{retries}...")
                 time.sleep(3.0)
 
-            full = ["sudo", "bash", "-c", cmd] if (sudo and os.geteuid() != 0) else ["bash", "-c", cmd]
+            full = ["sudo", "-n", "bash", "-c", cmd] if (sudo and os.geteuid() != 0) else ["bash", "-c", cmd]
             self.log(f"  $ {cmd}")
             try:
                 run_env = os.environ.copy()

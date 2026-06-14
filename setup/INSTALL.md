@@ -100,7 +100,32 @@ Il motivo è un problema dell'uovo e la gallina:
 
 ---
 
-## Passo 5 — Avvia il wizard
+## Passo 5 — Abilita sudo senza password (IMPORTANTE)
+
+Il wizard esegue molti comandi con `sudo` (apt, hostname, scrittura di file di sistema) e in modalità Web **gira dal browser**: non c'è modo di digitare una password nel terminale. Per questo usa `sudo` in modalità non-interattiva (`sudo -n`) e **richiede che l'utente `pi` possa usare sudo senza password**.
+
+> Su alcune immagini Raspberry Pi OS è già attivo di default. Se durante il wizard vedi `[sudo] password for pi:` nel terminale, oppure il blocco **Controllo Sistema** risulta **FAILED**, allora NON è attivo.
+
+Esegui **una volta** (ti chiede la password solo adesso):
+
+```bash
+echo "pi ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/010_pi-nopasswd
+sudo chmod 440 /etc/sudoers.d/010_pi-nopasswd
+```
+
+Verifica (non deve chiedere nulla):
+
+```bash
+sudo -n true && echo "OK: sudo senza password attivo"
+```
+
+Da questo momento il wizard gira **interamente dal browser, senza alcun prompt** di password. Senza questo passo, con `sudo -n` il wizard non resta bloccato: si ferma subito sul Controllo Sistema con un messaggio chiaro, invece di appendere il terminale.
+
+> Più avanti (Passo 8) viene installata anche una regola sudoers **ristretta** per la gestione del servizio a regime. Se a fine setup vuoi irrigidire la sicurezza, puoi rimuovere `/etc/sudoers.d/010_pi-nopasswd` e affidarti solo a quelle regole — ma il wizard e i bottoni di build VSCode useranno sudo, quindi valuta in base al tuo uso.
+
+---
+
+## Passo 6 — Avvia il wizard
 
 Il wizard ha tre modalità di interfaccia:
 
@@ -132,7 +157,7 @@ python3 setup/wizard.py
 
 ---
 
-## Passo 6 — Configura le opzioni nel wizard
+## Passo 7 — Configura le opzioni nel wizard
 
 | Opzione | Consiglio |
 |---------|-----------|
@@ -146,7 +171,7 @@ Clicca **Avvia Installazione** e monitora il progresso in tempo reale.
 
 ---
 
-## Passo 7 — Regole sudoers (build senza password)
+## Passo 8 — Regole sudoers (build senza password)
 
 Il build script e i bottoni VSCode usano `sudo` per fermare il servizio e ripulire i log.
 Installa le regole che permettono all'utente `pi` di farlo senza digitare la password ogni volta:
@@ -165,7 +190,7 @@ Permessi concessi (solo questi, nient'altro):
 
 ---
 
-## Passo 8 — Riavvio finale
+## Passo 9 — Riavvio finale
 
 Al termine del wizard:
 
@@ -258,7 +283,7 @@ python3 setup/wizard.py --dry-run --tui
 ├── openal/alsoft.conf           ← OpenAL
 ├── mumble-server.ini            ← server Mumble
 ├── systemd/system/doorphoneserver.service
-├── sudoers.d/doorphoneserver          ← build/service senza password (Passo 7)
+├── sudoers.d/doorphoneserver          ← build/service senza password (Passo 8)
 └── log2ram.conf                 ← se installato
 
 /boot/firmware/config.txt        ← audio onboard disabilitato (Bookworm+)
@@ -290,7 +315,7 @@ python3 setup/wizard.py --audio-setup
 
 ### Il build chiede la password sudo
 
-Esegui il Passo 7 per installare le regole sudoers:
+Esegui il Passo 8 per installare le regole sudoers:
 
 ```bash
 sudo bash setup/scripts/setup_sudoers.sh

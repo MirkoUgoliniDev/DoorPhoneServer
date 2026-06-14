@@ -45,7 +45,7 @@ class StepCloneAndBuild(Step):
             git_dir_exists = (home / ".git").exists()
         except PermissionError:
             git_dir_exists = subprocess.run(
-                ["sudo", "-u", TK_USER, "test", "-d", str(home / ".git")],
+                ["sudo", "-n", "-u", TK_USER, "test", "-d", str(home / ".git")],
                 capture_output=True
             ).returncode == 0
 
@@ -83,7 +83,7 @@ class StepCloneAndBuild(Step):
             src_missing = not (home / "go.mod").exists()
         except PermissionError:
             src_missing = subprocess.run(
-                ["sudo", "-u", TK_USER, "test", "-f", str(home / "go.mod")],
+                ["sudo", "-n", "-u", TK_USER, "test", "-f", str(home / "go.mod")],
                 capture_output=True
             ).returncode != 0
 

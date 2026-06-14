@@ -64,7 +64,7 @@ class StepSystemdService(Step):
                 existing = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
             except PermissionError:
                 import subprocess as _sp
-                r = _sp.run(["sudo", "cat", str(bashrc)], capture_output=True, text=True)
+                r = _sp.run(["sudo", "-n", "cat", str(bashrc)], capture_output=True, text=True)
                 existing = r.stdout if r.returncode == 0 else ""
             if "Go dev environment" not in existing:
                 runner.write(bashrc, existing + dev_block, sudo=True)
