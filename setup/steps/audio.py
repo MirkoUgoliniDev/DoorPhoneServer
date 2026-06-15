@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from lib.step_base import Step, Status
 from lib.audio_utils import best_card_pair, generate_asound_conf, get_playback_control
-from lib.constants import REPO_ROOT, TK_USER, TK_GROUP
+from lib.constants import REPO_ROOT
 
 
 class StepAudioConfig(Step):
@@ -73,26 +73,43 @@ class StepAudioConfig(Step):
         elif xml_src.exists():
             ctrl = get_playback_control(play_card)
             if ctrl:
-                # Il file di config vive nella home del servizio (REPO_ROOT ==
-                # /home/doorphoneserver) ed è di proprietà di 'doorphoneserver',
-                # mentre il wizard gira come 'pi'. Se il repo è stato clonato da
-                # root con umask restrittiva il file resta root:root senza
-                # permesso di lettura per 'pi' e read_text() qui sotto solleva
-                # [Errno 13] Permission denied. Normalizzo owner+permessi
-                # (idempotente) così sia il wizard sia il servizio possono
-                # leggerlo/scriverlo; la successiva runner.write(sudo) li
-                # preserva (cp su file esistente non cambia owner/mode).
-                runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(xml_src)], sudo=True)
-                runner.run(["chmod", "664", str(xml_src)], sudo=True)
-                content = xml_src.read_text(encoding="utf-8")
+                # Aggiornare outputdevice nel XML è cosmetico: NON deve mai far
+                # abortire l'installazione. Il wizard gira come utente normale
+                # (di norma 'pi', vedi wizard.py) che NON ha sempre sudo -n
+                # disponibile, quindi non si può dipendere da sudo qui.
+                # Strategia: leggi e scrivi DIRETTAMENTE (funziona quando
+                # l'utente possiede o ha permesso di scrittura sul file); se la
+                # scrittura diretta fallisce, prova con sudo; se tutto fallisce
+                # logga un warning e prosegui.
+                try:
+                    content = xml_src.read_text(encoding="utf-8")
+                except OSError as e:
+                    runner.log(f"  ⚠ XML non leggibile ({e}) — outputdevice non aggiornato, continuo")
+                    self._set_status(Status.DONE)
+                    return True
+
                 content = re.sub(r'<outputdevice>[^<]*</outputdevice>',
                                  f'<outputdevice>{ctrl}</outputdevice>', content)
                 content = re.sub(r'<outputvolcontroldevice>[^<]*</outputvolcontroldevice>',
                                  f'<outputvolcontroldevice>{ctrl}</outputvolcontroldevice>', content)
                 content = re.sub(r'<outputmutecontroldevice>[^<]*</outputmutecontroldevice>',
                                  f'<outputmutecontroldevice>{ctrl}</outputmutecontroldevice>', content)
-                runner.write(xml_src, content, sudo=True)
-                runner.log(f"  ✓ XML outputdevice → {ctrl}")
+
+                ok = runner.write(xml_src, content, sudo=False)
+                if not ok:
+                    ok = runner.write(xml_src, content, sudo=True)
+                if ok:
+                    # Il file temporaneo nasce a 0600: senza questo chmod la
+                    # riscrittura lascerebbe il config a 0600 e l'utente di
+                    # gruppo (pi) perderebbe la scrittura. 664 = proprietario +
+                    # gruppo doorphoneserver in scrittura, lettura per tutti.
+                    try:
+                        xml_src.chmod(0o664)
+                    except OSError:
+                        pass
+                    runner.log(f"  ✓ XML outputdevice → {ctrl}")
+                else:
+                    runner.log("  ⚠ XML outputdevice non aggiornato (permessi) — continuo comunque")
             else:
                 runner.log("  ⚠ Controllo mixer non rilevato — outputdevice nel XML non aggiornato")
 
