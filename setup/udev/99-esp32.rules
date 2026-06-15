@@ -1,0 +1,13 @@
+# /etc/udev/rules.d/99-esp32.rules
+# Accesso gruppo dialout per ESP32-S3 (Espressif USB CDC, VID 303a).
+# DoorPhoneServer identifica automaticamente RFID vs RELAY via protocollo GET-ROLE/HELLO.
+# Non richiede configurazione manuale — nessun seriale da specificare.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0660", GROUP="dialout"
+
+# NOTA: questa regola copre solo l'USB CDC nativo dell'ESP32-S3 (VID 303a),
+# che si presenta come /dev/ttyACM*. Se usi board con chip USB-UART esterno
+# (CP2102 VID 10c4, CH340 VID 1a86, FTDI VID 0403) il device appare come
+# /dev/ttyUSB* con VID diverso: in tal caso decommenta la riga corrispondente.
+#SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0660", GROUP="dialout"
+#SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0660", GROUP="dialout"
+#SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", MODE="0660", GROUP="dialout"

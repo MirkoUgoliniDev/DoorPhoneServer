@@ -25,13 +25,16 @@ type floorsJSON struct {
 }
 
 const (
-	usbSerialPath    = "/dev/esp32"
 	usbBaudRate      = 115200
 	usbPingInterval  = 5 * time.Second
 	usbRetryDelay    = 2 * time.Second
 	usbRetryLogEvery = 15
 	usbSendBufSize   = 32
 	usbEvtBufSize    = 64
+	// usbProbeTimeout limita l'attesa di HELLO per ogni porta durante la discovery.
+	// Tenuto basso perché HELLO arriva subito dopo GET-ROLE e il probe gira sotto
+	// discoveryMu, bloccando l'altro bridge per la durata della scansione.
+	usbProbeTimeout = 800 * time.Millisecond
 )
 
 const cardLogMax = 50
@@ -229,38 +232,6 @@ func normalizeUID(uid string) string {
 
 const usbLogMax = 200
 
-// usbLogBuf è il ring buffer globale del log USB (← e →).
-var (
-	usbLogMu  sync.Mutex
-	usbLogBuf []string
-)
-
-// usbLogAppend aggiunge una riga al ring buffer del log USB.
-func usbLogAppend(line string) {
-	usbLogMu.Lock()
-	usbLogBuf = append(usbLogBuf, line)
-	if len(usbLogBuf) > usbLogMax {
-		usbLogBuf = usbLogBuf[len(usbLogBuf)-usbLogMax:]
-	}
-	usbLogMu.Unlock()
-}
-
-// USBLogSnapshot ritorna una copia del ring buffer attuale.
-func USBLogSnapshot() []string {
-	usbLogMu.Lock()
-	defer usbLogMu.Unlock()
-	out := make([]string, len(usbLogBuf))
-	copy(out, usbLogBuf)
-	return out
-}
-
-// USBLogClear svuota il ring buffer.
-func USBLogClear() {
-	usbLogMu.Lock()
-	usbLogBuf = nil
-	usbLogMu.Unlock()
-}
-
 // USBBridge gestisce la connessione seriale con l'ESP32-S3.
 // Thread-safe. I canali GpioEvt, CardEvt e NfcEvt sono read-only per i consumer.
 type USBBridge struct {
@@ -268,6 +239,15 @@ type USBBridge struct {
 	CardEvt <-chan CardEvent
 	NfcEvt  <-chan NfcEvent
 	State   *esp32State
+
+	// OnDoorUnlock è chiamato quando UID-OK viene approvato dalla whitelist.
+	// Permette di inviare "SET unlockdoor pulse" al bridge relay senza accoppiamento diretto.
+	OnDoorUnlock func()
+
+	path   string
+	logTag string
+	logMu  sync.Mutex
+	logBuf []string
 
 	gpioCh chan GPIOEvent
 	cardCh chan CardEvent
@@ -286,11 +266,13 @@ type USBBridge struct {
 	tagListBuf map[string]string
 }
 
-// NewUSBBridge crea il bridge e avvia la connessione in background.
-func NewUSBBridge(ctx context.Context) *USBBridge {
+// NewUSBBridge crea il bridge per il ruolo indicato ("RFID" o "RELAY").
+// La porta USB viene scoperta automaticamente tramite il protocollo GET-ROLE/HELLO.
+func NewUSBBridge(ctx context.Context, role string) *USBBridge {
 	state := newESP32State()
 	state.loadFloorsFromDisk()
 	b := &USBBridge{
+		logTag:     role,
 		gpioCh:     make(chan GPIOEvent, usbEvtBufSize),
 		cardCh:     make(chan CardEvent, usbEvtBufSize),
 		nfcCh:      make(chan NfcEvent, usbEvtBufSize),
@@ -303,6 +285,47 @@ func NewUSBBridge(ctx context.Context) *USBBridge {
 	b.NfcEvt = b.nfcCh
 	go b.connectLoop(ctx)
 	return b
+}
+
+// logAppend aggiunge una riga al ring buffer del log di questo bridge.
+func (b *USBBridge) logAppend(line string) {
+	b.logMu.Lock()
+	b.logBuf = append(b.logBuf, "["+b.logTag+"] "+line)
+	if len(b.logBuf) > usbLogMax {
+		b.logBuf = b.logBuf[len(b.logBuf)-usbLogMax:]
+	}
+	b.logMu.Unlock()
+}
+
+// LogSnapshot ritorna una copia del ring buffer log di questo bridge.
+func (b *USBBridge) LogSnapshot() []string {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+	out := make([]string, len(b.logBuf))
+	copy(out, b.logBuf)
+	return out
+}
+
+// LogClear svuota il ring buffer log di questo bridge.
+func (b *USBBridge) LogClear() {
+	b.logMu.Lock()
+	b.logBuf = nil
+	b.logMu.Unlock()
+}
+
+// setPath registra la porta seriale corrente del bridge (thread-safe).
+// Riusa logMu: path e log hanno lo stesso ciclo di vita (sessione di connessione).
+func (b *USBBridge) setPath(p string) {
+	b.logMu.Lock()
+	b.path = p
+	b.logMu.Unlock()
+}
+
+// Path ritorna la porta seriale su cui il bridge è connesso ("" se disconnesso).
+func (b *USBBridge) Path() string {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+	return b.path
 }
 
 // SetNFCManager collega il bridge al gestore whitelist NFC.
@@ -404,29 +427,44 @@ func (b *USBBridge) SendTagList(t time.Duration) (map[string]string, error) {
 // ── Connessione ───────────────────────────────────────────────────────────────
 
 func (b *USBBridge) connectLoop(ctx context.Context) {
+	tag := "[USB-" + b.logTag + "]"
 	failCount := 0
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[USB] bridge fermato")
+			log.Printf("%s bridge fermato", tag)
 			return
 		default:
 		}
 
-		port, err := serial.Open(usbSerialPath, &serial.Mode{
+		// Scoperta dinamica della porta per questo ruolo. Se trovata, la porta
+		// resta riservata (portsInUse) finché non la rilasciamo esplicitamente.
+		path := findPortForRole(b.logTag, usbProbeTimeout)
+		if path == "" {
+			failCount++
+			if failCount == 1 || failCount%usbRetryLogEvery == 0 {
+				log.Printf("%s nessun device con ruolo %s trovato (tentativo %d)", tag, b.logTag, failCount)
+			}
+			select {
+			case <-ctx.Done():
+				log.Printf("%s bridge fermato", tag)
+				return
+			case <-time.After(usbRetryDelay):
+			}
+			continue
+		}
+
+		port, err := serial.Open(path, &serial.Mode{
 			BaudRate: usbBaudRate,
 			DataBits: 8,
 			Parity:   serial.NoParity,
 			StopBits: serial.OneStopBit,
 		})
 		if err != nil {
-			failCount++
-			if failCount == 1 || failCount%usbRetryLogEvery == 0 {
-				log.Printf("[USB] ESP32-S3 non disponibile (tentativo %d): %v", failCount, err)
-			}
+			log.Printf("%s impossibile aprire %s: %v", tag, path, err)
+			unmarkPortInUse(path)
 			select {
 			case <-ctx.Done():
-				log.Printf("[USB] bridge fermato")
 				return
 			case <-time.After(usbRetryDelay):
 			}
@@ -434,19 +472,25 @@ func (b *USBBridge) connectLoop(ctx context.Context) {
 		}
 
 		failCount = 0
-		log.Printf("[USB] ESP32-S3 connesso su %s", usbSerialPath)
+		b.setPath(path)
+		log.Printf("%s ESP32-%s connesso su %s", tag, b.logTag, path)
 		b.State.setConnected(true)
 		b.drainSendCh()
 		b.Send("GET-STATE\n")
-		b.Send("FLOOR-GET\n")
+		// FLOOR-GET riguarda solo il display occupanti sull'ESP32 RFID.
+		if b.logTag == "RFID" {
+			b.Send("FLOOR-GET\n")
+		}
 		b.runSession(ctx, port)
 		b.State.setConnected(false)
 		b.State.resetPins()
-		log.Printf("[USB] connessione persa — riconnessione in %v", usbRetryDelay)
+		b.setPath("")
+		unmarkPortInUse(path)
+		log.Printf("%s connessione persa — riconnessione in %v", tag, usbRetryDelay)
 
 		select {
 		case <-ctx.Done():
-			log.Printf("[USB] bridge fermato")
+			log.Printf("%s bridge fermato", tag)
 			return
 		case <-time.After(usbRetryDelay):
 		}
@@ -462,6 +506,14 @@ func (b *USBBridge) runSession(ctx context.Context, port serial.Port) {
 		closeOnce.Do(func() { port.Close() })
 	}
 	defer closePort()
+
+	// Chiude la porta appena il contesto di sessione viene cancellato: sblocca
+	// la Read di readLoop indipendentemente da writeLoop, evitando hang se
+	// quest'ultimo terminasse senza chiudere la porta.
+	go func() {
+		<-sessionCtx.Done()
+		closePort()
+	}()
 
 	go b.writeLoop(sessionCtx, port, closePort)
 	go b.pingLoop(sessionCtx)
@@ -498,8 +550,8 @@ func (b *USBBridge) dispatch(line string) {
 	if line == "" {
 		return
 	}
-	log.Printf("[USB] ← %s", line)
-	usbLogAppend("← " + line)
+	log.Printf("[USB-%s] ← %s", b.logTag, line)
+	b.logAppend("← " + line)
 
 	switch {
 	case line == "UID-OK":
@@ -507,8 +559,8 @@ func (b *USBBridge) dispatch(line string) {
 		b.drainOrSendCard(CardEvent{OK: true})
 		if b.nfcMgr != nil {
 			// Apre il portone solo se il tag è in whitelist e non disabilitato.
-			if b.nfcMgr.HandleUIDOK() {
-				b.Send("SET unlockdoor pulse\n")
+			if b.nfcMgr.HandleUIDOK() && b.OnDoorUnlock != nil {
+				b.OnDoorUnlock()
 			}
 		}
 
@@ -792,7 +844,7 @@ func (b *USBBridge) drainSendCh() {
 func (b *USBBridge) writeLoop(ctx context.Context, port serial.Port, closePort func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[USB] panic in writeLoop: %v", r)
+			log.Printf("[USB-%s] panic in writeLoop: %v", b.logTag, r)
 		}
 	}()
 
@@ -803,12 +855,12 @@ func (b *USBBridge) writeLoop(ctx context.Context, port serial.Port, closePort f
 			return
 		case msg := <-b.sendCh:
 			if _, err := port.Write([]byte(msg)); err != nil {
-				log.Printf("[USB] errore scrittura: %v — disconnessione", err)
+				log.Printf("[USB-%s] errore scrittura: %v — disconnessione", b.logTag, err)
 				closePort()
 				return
 			}
-			log.Printf("[USB] → %s", strings.TrimSpace(msg))
-			usbLogAppend("→ " + strings.TrimSpace(msg))
+			log.Printf("[USB-%s] → %s", b.logTag, strings.TrimSpace(msg))
+			b.logAppend("→ " + strings.TrimSpace(msg))
 		}
 	}
 }

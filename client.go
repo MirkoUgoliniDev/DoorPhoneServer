@@ -62,7 +62,8 @@ type DoorPhoneServer struct {
 	IsTransmitting  atomic.Bool
 	IsPlayStream    bool
 	GPIOEnabled     bool
-	USBBridge       *USBBridge
+	USBBridge       *USBBridge // ESP32-A: NFC + pulsanti
+	RelayBridge     *USBBridge // ESP32-B: relè porta + relè tablet + fan
 	NFCWhitelist    *NFCWhitelistManager
 }
 
@@ -162,18 +163,26 @@ func Init(file string, ServerIndex string) {
 	b.NFCWhitelist = NewNFCWhitelistManager()
 
 	if ioUseESP32() {
-		usbBridge := NewUSBBridge(ctx)
-		b.USBBridge = usbBridge
-		ioUSB = NewGPIOUsb(usbBridge, &b)
+		bridgeRFID  := NewUSBBridge(ctx, "RFID")
+		bridgeRelay := NewUSBBridge(ctx, "RELAY")
+		b.USBBridge  = bridgeRFID
+		b.RelayBridge = bridgeRelay
+
+		// Quando il tag RFID è approvato dalla whitelist, apre il portone sul bridge relay.
+		bridgeRFID.OnDoorUnlock = func() {
+			bridgeRelay.Send("SET unlockdoor pulse\n")
+		}
+
+		ioUSB = NewGPIOUsb(bridgeRFID, bridgeRelay, &b)
 		go ioUSB.Run(ctx)
-		go NewSmartcard(usbBridge).Run(ctx)
-		usbBridge.SetNFCManager(b.NFCWhitelist)
+		go NewSmartcard(bridgeRFID).Run(ctx)
+		bridgeRFID.SetNFCManager(b.NFCWhitelist)
 
 		// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
 		// e riconcilia la chiave AES DESFire (EnsureKey).
 		go func() {
 			time.Sleep(8 * time.Second)
-			tags, err := usbBridge.SendTagList(5 * time.Second)
+			tags, err := bridgeRFID.SendTagList(5 * time.Second)
 			if err != nil {
 				log.Printf("[NFC] sync avvio fallita: %v", err)
 			} else {
@@ -181,7 +190,7 @@ func Init(file string, ServerIndex string) {
 				log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
 					result["esp32_count"], result["json_count"], result["in_sync"])
 			}
-			fp, err := usbBridge.EnsureKey()
+			fp, err := bridgeRFID.EnsureKey()
 			if err != nil {
 				log.Printf("[NFC] EnsureKey fallita: %v", err)
 				return

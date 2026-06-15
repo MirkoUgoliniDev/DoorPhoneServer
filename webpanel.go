@@ -4096,14 +4096,17 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 
 	type statusResp struct {
-		Connected bool              `json:"connected"`
-		Pins      map[string]int    `json:"pins"`
-		CardLog   []ESP32CardLog    `json:"card_log"`
-		USBLog    []string          `json:"usb_log"`
-		RingFlash map[string]int64  `json:"ring_flash"`
-		TabletOn  bool              `json:"tablet_on"`
-		FanPct    int               `json:"fan_pct"`
-		Floors    floorsJSON        `json:"floors"`
+		Connected      bool             `json:"connected"`
+		RelayConnected bool             `json:"relay_connected"`
+		RfidPort       string           `json:"rfid_port"`
+		RelayPort      string           `json:"relay_port"`
+		Pins           map[string]int   `json:"pins"`
+		CardLog        []ESP32CardLog   `json:"card_log"`
+		USBLog         []string         `json:"usb_log"`
+		RingFlash      map[string]int64 `json:"ring_flash"`
+		TabletOn       bool             `json:"tablet_on"`
+		FanPct         int              `json:"fan_pct"`
+		Floors         floorsJSON       `json:"floors"`
 	}
 
 	resp := statusResp{
@@ -4114,12 +4117,18 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 	}
 	if b.USBBridge != nil {
 		resp.Connected, resp.Pins, resp.CardLog = b.USBBridge.State.snapshot()
-		resp.USBLog = USBLogSnapshot()
+		resp.RfidPort = b.USBBridge.Path()
+		resp.USBLog = b.USBBridge.LogSnapshot()
 		resp.RingFlash = b.USBBridge.State.getRingFlash()
-		resp.TabletOn = b.USBBridge.State.getTablet()
-		resp.FanPct = b.USBBridge.State.getFanPct()
 		f := b.USBBridge.State.getFloors()
 		resp.Floors = floorsJSON{P1: f[0], P2: f[1], P3: f[2]}
+	}
+	if b.RelayBridge != nil {
+		resp.RelayConnected = b.RelayBridge.State.isConnected()
+		resp.RelayPort = b.RelayBridge.Path()
+		resp.TabletOn = b.RelayBridge.State.getTablet()
+		resp.FanPct = b.RelayBridge.State.getFanPct()
+		resp.USBLog = append(resp.USBLog, b.RelayBridge.LogSnapshot()...)
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -4139,11 +4148,11 @@ func (b *DoorPhoneServer) handleESP32Fan(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
-		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+	if b.RelayBridge == nil || !b.RelayBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 relay non connesso"}`)
 		return
 	}
-	b.USBBridge.Send("FAN-" + strconv.Itoa(duty) + "\n")
+	b.RelayBridge.Send("FAN-" + strconv.Itoa(duty) + "\n")
 	log.Printf("[PANEL] ESP32 FAN-%d", duty)
 	fmt.Fprintf(w, `{"ok":true}`)
 }
@@ -4154,7 +4163,12 @@ func (b *DoorPhoneServer) handleESP32USBLog(w http.ResponseWriter, r *http.Reque
 	panelSecurityHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodPost {
-		USBLogClear()
+		if b.USBBridge != nil {
+			b.USBBridge.LogClear()
+		}
+		if b.RelayBridge != nil {
+			b.RelayBridge.LogClear()
+		}
 		fmt.Fprintf(w, `{"ok":true}`)
 		return
 	}
@@ -4162,7 +4176,16 @@ func (b *DoorPhoneServer) handleESP32USBLog(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	lines := USBLogSnapshot()
+	var lines []string
+	if b.USBBridge != nil {
+		lines = append(lines, b.USBBridge.LogSnapshot()...)
+	}
+	if b.RelayBridge != nil {
+		lines = append(lines, b.RelayBridge.LogSnapshot()...)
+	}
+	if lines == nil {
+		lines = []string{}
+	}
 	if err := json.NewEncoder(w).Encode(lines); err != nil {
 		log.Printf("error: encode usblog: %v", err)
 	}
@@ -4177,20 +4200,20 @@ func (b *DoorPhoneServer) handleESP32Tablet(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
-		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+	if b.RelayBridge == nil || !b.RelayBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 relay non connesso"}`)
 		return
 	}
 	state := r.FormValue("state")
 	switch state {
 	case "on":
-		b.USBBridge.Send("TABLET-ON\n")
-		b.USBBridge.State.setTablet(true)
+		b.RelayBridge.Send("TABLET-ON\n")
+		b.RelayBridge.State.setTablet(true)
 		log.Printf("[PANEL] tablet ON")
 		fmt.Fprintf(w, `{"ok":true,"tablet_on":true}`)
 	case "off":
-		b.USBBridge.Send("TABLET-OFF\n")
-		b.USBBridge.State.setTablet(false)
+		b.RelayBridge.Send("TABLET-OFF\n")
+		b.RelayBridge.State.setTablet(false)
 		log.Printf("[PANEL] tablet OFF")
 		fmt.Fprintf(w, `{"ok":true,"tablet_on":false}`)
 	default:
@@ -4281,12 +4304,12 @@ func (b *DoorPhoneServer) handleESP32Door(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
-		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 non connesso"}`)
+	if b.RelayBridge == nil || !b.RelayBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 relay non connesso"}`)
 		return
 	}
-	b.USBBridge.Send("UNLOCK-DOOR\n")
-	log.Printf("[PANEL] ESP32 UNLOCK_DOOR inviato")
+	b.RelayBridge.Send("SET unlockdoor pulse\n")
+	log.Printf("[PANEL] ESP32 unlockdoor pulse inviato")
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 

@@ -6,25 +6,25 @@ import (
 	"strings"
 )
 
-// GPIOUsb consuma eventi GPIO dall'ESP32-S3 ed espone i comandi di output
-// (SetPin/SetPWM/Pulse). Gli eventi di input vengono tradotti in azioni
-// (es. pressione pulsante piano → cmdRingPiano) solo quando il backend IO
-// configurato è l'ESP32 (vedi ioUseESP32); altrimenti restano solo loggati.
+// GPIOUsb consuma eventi GPIO dall'ESP32-S3 RFID ed espone i comandi di output
+// con routing automatico: unlockdoor/power_tablet/fan → relay bridge; il resto → rfid bridge.
 type GPIOUsb struct {
-	bridge *USBBridge
-	srv    *DoorPhoneServer
+	rfid  *USBBridge // ESP32-A: NFC + pulsanti campanelli
+	relay *USBBridge // ESP32-B: relè porta + relè tablet + fan PWM
+	srv   *DoorPhoneServer
 }
 
 // ioUSB è l'handle globale al backend IO su ESP32, usato dalle funzioni di
 // output package-level (GPIOOutPin/GPIOOutAll) quando backend="esp32".
 var ioUSB *GPIOUsb
 
-// NewGPIOUsb crea il gestore GPIO USB collegato al server per le azioni di input.
-func NewGPIOUsb(bridge *USBBridge, srv *DoorPhoneServer) *GPIOUsb {
-	return &GPIOUsb{bridge: bridge, srv: srv}
+// NewGPIOUsb crea il gestore GPIO USB con routing su due bridge.
+// rfid gestisce NFC e input pulsanti; relay gestisce relè porta, tablet e fan.
+func NewGPIOUsb(rfid, relay *USBBridge, srv *DoorPhoneServer) *GPIOUsb {
+	return &GPIOUsb{rfid: rfid, relay: relay, srv: srv}
 }
 
-// Run avvia il loop di ricezione eventi. Blocca fino alla cancellazione del contesto.
+// Run avvia il loop di ricezione eventi dal bridge RFID. Blocca fino alla cancellazione del contesto.
 func (g *GPIOUsb) Run(ctx context.Context) {
 	log.Printf("[GPIO-USB] avviato")
 	for {
@@ -32,7 +32,7 @@ func (g *GPIOUsb) Run(ctx context.Context) {
 		case <-ctx.Done():
 			log.Printf("[GPIO-USB] fermato")
 			return
-		case evt := <-g.bridge.GpioEvt:
+		case evt := <-g.rfid.GpioEvt:
 			pressed := evt.Value == 0 // active-low: 0 = premuto
 			action := "rilasciato"
 			if pressed {
@@ -52,12 +52,26 @@ func (g *GPIOUsb) Run(ctx context.Context) {
 	}
 }
 
-// SetPin invia un comando SET all'ESP32-S3 (on / off / pulse).
-func (g *GPIOUsb) SetPin(name, state string) {
-	g.bridge.Send("SET " + name + " " + state + "\n")
+// relayNames sono i pin fisicamente sul bridge relay (ESP32-B).
+var relayNames = map[string]bool{
+	"unlockdoor":   true,
+	"power_tablet": true,
 }
 
-// SetPWM invia un comando PWM all'ESP32-S3 (duty 0–100).
+// bridgeFor restituisce il bridge corretto per il nome del pin.
+func (g *GPIOUsb) bridgeFor(name string) *USBBridge {
+	if relayNames[name] {
+		return g.relay
+	}
+	return g.rfid
+}
+
+// SetPin invia un comando SET al bridge corretto per quel pin (on / off / pulse).
+func (g *GPIOUsb) SetPin(name, state string) {
+	g.bridgeFor(name).Send("SET " + name + " " + state + "\n")
+}
+
+// SetPWM invia un comando PWM al relay bridge (fan è su ESP32-B, duty 0–100).
 func (g *GPIOUsb) SetPWM(name string, duty int) {
 	if duty < 0 {
 		duty = 0
@@ -65,20 +79,20 @@ func (g *GPIOUsb) SetPWM(name string, duty int) {
 	if duty > 100 {
 		duty = 100
 	}
-	g.bridge.Send("PWM " + name + " " + itoa(duty) + "\n")
+	g.relay.Send("PWM " + name + " " + itoa(duty) + "\n")
 }
 
-// Pulse invia un comando pulse all'ESP32-S3.
+// Pulse invia un comando pulse al bridge corretto per quel pin.
 func (g *GPIOUsb) Pulse(name string) {
 	g.SetPin(name, "pulse")
 }
 
-// TabletPower invia TABLET-ON o TABLET-OFF all'ESP32-S3.
+// TabletPower invia TABLET-ON o TABLET-OFF al relay bridge (ESP32-B).
 func (g *GPIOUsb) TabletPower(on bool) {
 	if on {
-		g.bridge.Send("TABLET-ON\n")
+		g.relay.Send("TABLET-ON\n")
 	} else {
-		g.bridge.Send("TABLET-OFF\n")
+		g.relay.Send("TABLET-OFF\n")
 	}
 }
 
