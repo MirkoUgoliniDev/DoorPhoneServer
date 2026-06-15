@@ -94,12 +94,12 @@ func esp32PinState(pinNumber int) (int, error) {
 	}
 	name := gpioNameByNumber(pinNumber)
 	if name == "power_tablet" {
-		if ioUSB.bridge.State.getTablet() {
+		if ioUSB.relay.State.getTablet() {
 			return 0, nil
 		}
 		return 1, nil
 	}
-	_, pins, _ := ioUSB.bridge.State.snapshot()
+	_, pins, _ := ioUSB.bridgeFor(name).State.snapshot()
 	if v, ok := pins[name]; ok {
 		return v, nil
 	}
