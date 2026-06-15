@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from lib.step_base import Step, Status
 from lib.audio_utils import best_card_pair, generate_asound_conf, get_playback_control
-from lib.constants import REPO_ROOT
+from lib.constants import REPO_ROOT, TK_USER, TK_GROUP
 
 
 class StepAudioConfig(Step):
@@ -73,6 +73,17 @@ class StepAudioConfig(Step):
         elif xml_src.exists():
             ctrl = get_playback_control(play_card)
             if ctrl:
+                # Il file di config vive nella home del servizio (REPO_ROOT ==
+                # /home/doorphoneserver) ed è di proprietà di 'doorphoneserver',
+                # mentre il wizard gira come 'pi'. Se il repo è stato clonato da
+                # root con umask restrittiva il file resta root:root senza
+                # permesso di lettura per 'pi' e read_text() qui sotto solleva
+                # [Errno 13] Permission denied. Normalizzo owner+permessi
+                # (idempotente) così sia il wizard sia il servizio possono
+                # leggerlo/scriverlo; la successiva runner.write(sudo) li
+                # preserva (cp su file esistente non cambia owner/mode).
+                runner.run(["chown", f"{TK_USER}:{TK_GROUP}", str(xml_src)], sudo=True)
+                runner.run(["chmod", "664", str(xml_src)], sudo=True)
                 content = xml_src.read_text(encoding="utf-8")
                 content = re.sub(r'<outputdevice>[^<]*</outputdevice>',
                                  f'<outputdevice>{ctrl}</outputdevice>', content)
