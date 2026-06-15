@@ -695,53 +695,6 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 
 </div>
 
-<!-- Chiave AES DESFire -->
-<div id="esp32KeyCard" class="card" style="margin-top:16px">
-  <!-- Banner re-enroll (nascosto di default) -->
-  <div id="keyReEnrollBanner" style="display:none;background:#2d1a00;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;align-items:flex-start;gap:12px">
-    <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:18px;flex-shrink:0;margin-top:1px"></i>
-    <div style="flex:1">
-      <div style="font-size:13px;font-weight:700;color:#f59e0b;margin-bottom:4px">Re-enroll tessere necessario</div>
-      <div style="font-size:12px;color:#d4a04a;line-height:1.5">La chiave AES è cambiata. Le tessere precedentemente enrollate non autenticano più.<br>Re-enrolla tutte le tessere, poi conferma.</div>
-    </div>
-    <button class="btn-o btn-o-blue btn-sm" onclick="esp32KeyAckReEnroll()" style="flex-shrink:0;white-space:nowrap">Ho ri-enrollato tutto</button>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
-    <h2 style="margin:0"><i class="bi bi-key"></i> Chiave AES DESFire</h2>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-    <!-- Stato chiave -->
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Stato</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span id="keyStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0"></span>
-        <span id="keyStatusLabel" style="font-size:13px;font-weight:600;color:var(--dim)">—</span>
-      </div>
-    </div>
-
-    <!-- Fingerprint -->
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Fingerprint</span>
-      <span id="keyFP" style="font-family:'Fira Code',monospace;font-size:16px;font-weight:700;color:var(--accent);letter-spacing:.12em">—</span>
-    </div>
-
-    <!-- Azioni -->
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Azioni</span>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button id="btnKeyGen" class="btn-o btn-o-blue btn-sm" onclick="esp32KeyGen(false)">
-          <i class="bi bi-key-fill"></i> Genera chiave
-        </button>
-        <button id="btnKeyGenForce" class="btn-o btn-o-red btn-sm" onclick="esp32KeyGenForce()" style="display:none">
-          <i class="bi bi-arrow-repeat"></i> Rigenera (FORCE)
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Log USB seriale ESP32 -->
 <div id="esp32LogCard" class="card" style="margin-top:16px;display:none">
   <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="esp32LogToggle()">
@@ -761,6 +714,33 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 
 <!-- NFC Whitelist page -->
 <div class="page" id="page-nfcwhitelist">
+
+<!-- Modal helper re-enroll -->
+<div class="modal-overlay" id="reEnrollHelpModal">
+<div class="modal-box" style="width:500px;max-width:96vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-info-circle"></i></div>
+    <div class="modal-title">Come ri-enrollare le tessere</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+    <p style="font-size:13px;color:var(--dim);margin:0">La chiave AES è cambiata. Solo le tessere di tipo <b style="color:#22c55e">DESFIRE</b> devono essere ri-enrollate — i tag <b style="color:#5eecd4">PLAIN</b> non sono interessati.</p>
+    <ol style="font-size:13px;color:var(--fg);margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px">
+      <li>Clicca <b>Aggiungi Tag</b> nella sezione NFC Whitelist.</li>
+      <li>Inserisci il nominativo della tessera (uguale a quello già in lista).</li>
+      <li>Avvicina la tessera al lettore NFC entro i 30 secondi.</li>
+      <li>Ripeti i passi 1–3 per ogni tessera <b style="color:#22c55e">DESFIRE</b> presente in lista (quelle con il triangolo ⚠).</li>
+      <li>Quando hai finito tutte le tessere DESFIRE, clicca <b>Ho ri-enrollato tutto</b> nel banner.</li>
+    </ol>
+    <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;padding:10px 12px;font-size:12px;color:#f59e0b;display:flex;align-items:flex-start;gap:8px">
+      <i class="bi bi-exclamation-triangle-fill" style="flex-shrink:0;margin-top:1px"></i>
+      <span>Le tessere non ancora ri-enrollate non potranno autenticarsi finché non vengono ri-enrollate con la nuova chiave.</span>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="document.getElementById('reEnrollHelpModal').classList.remove('show')">Chiudi</button>
+  </div>
+</div>
+</div>
 
 <!-- Modal Aggiungi — SSE-driven, nuovo protocollo -->
 <div class="modal-overlay" id="nfcAddModal">
@@ -920,6 +900,15 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 </div>
 
 <div class="card">
+  <!-- Banner re-enroll (nascosto di default) -->
+  <div id="keyReEnrollBanner" style="display:none;background:#2d1a00;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;align-items:flex-start;gap:12px">
+    <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:18px;flex-shrink:0;margin-top:1px"></i>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;color:#f59e0b;margin-bottom:4px">Re-enroll tessere necessario</div>
+      <div style="font-size:12px;color:#d4a04a;line-height:1.5">La chiave AES è cambiata. Le tessere precedentemente enrollate non autenticano più.<br>Re-enrolla tutte le tessere, poi conferma. <button onclick="document.getElementById('reEnrollHelpModal').classList.add('show')" style="background:none;border:none;padding:0;font-size:12px;color:#f59e0b;text-decoration:underline;cursor:pointer;font-family:inherit">Come fare?</button></div>
+    </div>
+    <button class="btn-o btn-o-blue btn-sm" onclick="esp32KeyAckReEnroll()" style="flex-shrink:0;white-space:nowrap">Ho ri-enrollato tutto</button>
+  </div>
   <h2><i class="bi bi-wifi"></i> NFC Whitelist</h2>
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
     <button class="btn-o btn-o-blue btn-sm" onclick="nfcStartAdd()" id="nfcAddBtn">
@@ -943,13 +932,56 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
           <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap">Aggiunto il</th>
           <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border);white-space:nowrap">Ultimo accesso</th>
           <th style="text-align:center;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Accessi</th>
+          <th style="text-align:center;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Attivo</th>
           <th style="text-align:left;padding:10px 12px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)">Azioni</th>
         </tr>
       </thead>
       <tbody id="nfcBody">
-        <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--dim)">Caricamento…</td></tr>
+        <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--dim)">Caricamento…</td></tr>
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- Chiave AES DESFire -->
+<div id="esp32KeyCard" class="card" style="margin-top:16px">
+  <div style="margin-bottom:16px">
+    <h2 style="margin:0 0 6px"><i class="bi bi-key"></i> Chiave AES DESFire</h2>
+    <p style="margin:0;font-size:12px;color:var(--dim);line-height:1.5">Chiave crittografica usata per autenticare le tessere <b>DESFIRE</b>. È generata una sola volta e salvata sull'ESP32. Non va eliminata: se la rigeneri, tutte le tessere DESFIRE dovranno essere ri-enrollate.</p>
+  </div>
+
+  <div style="display:flex;align-items:flex-start;gap:32px;flex-wrap:wrap">
+    <!-- Stato chiave -->
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Stato</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="keyStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0"></span>
+        <span id="keyStatusLabel" style="font-size:13px;font-weight:600;color:var(--dim)">—</span>
+      </div>
+    </div>
+
+    <!-- Fingerprint -->
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Fingerprint</span>
+      <span id="keyFP" style="font-family:'Fira Code',monospace;font-size:16px;font-weight:700;color:var(--accent);letter-spacing:.12em">—</span>
+      <span style="font-size:11px;color:var(--dim)">Identificativo breve della chiave corrente</span>
+    </div>
+
+    <!-- Azioni -->
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Azioni</span>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="btnKeyGen" class="btn-o btn-o-blue btn-sm" onclick="esp32KeyGen(false)">
+          <i class="bi bi-key-fill"></i> Genera chiave
+        </button>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <button id="btnKeyGenForce" class="btn-o btn-o-red btn-sm" onclick="esp32KeyGenForce()" style="display:none">
+            <i class="bi bi-arrow-repeat"></i> Rigenera (FORCE)
+          </button>
+          <span id="btnKeyGenForceHint" style="display:none;font-size:11px;color:#f97316;line-height:1.4">Sostituisce la chiave attuale — tutte le tessere DESFIRE dovranno essere ri-enrollate.</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1003,7 +1035,7 @@ async function loadNfcWhitelist(){
     nfcData=await r.json()||[];
     nfcRender();
   }catch(e){
-    document.getElementById('nfcBody').innerHTML=`<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--red)">Errore: ${e.message}</td></tr>`;
+    document.getElementById('nfcBody').innerHTML=`<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--red)">Errore: ${e.message}</td></tr>`;
   }
 }
 
@@ -1012,29 +1044,56 @@ function nfcRender(){
   const count=document.getElementById('nfcCount');
   count.textContent=nfcData.length?`${nfcData.length} tag`:'';
   if(!nfcData||!nfcData.length){
-    body.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--dim)"><i class="bi bi-wifi-off" style="font-size:40px;opacity:.3;display:block;margin-bottom:10px"></i>Nessun tag in whitelist.</td></tr>`;
+    body.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--dim)"><i class="bi bi-wifi-off" style="font-size:40px;opacity:.3;display:block;margin-bottom:10px"></i>Nessun tag in whitelist.</td></tr>`;
     return;
   }
   const sorted=[...nfcData].sort((a,b)=>new Date(b.added_at)-new Date(a.added_at));
-  body.innerHTML=sorted.map(e=>`
-    <tr style="transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+  const needsReEnroll=document.getElementById('keyReEnrollBanner')?.style.display!=='none';
+  body.innerHTML=sorted.map(e=>{
+    const isDesfire=e.type==='DESFIRE';
+    const warn=needsReEnroll&&isDesfire;
+    return`
+    <tr style="transition:background .15s${warn?';border-left:3px solid #f59e0b':''}" onmouseover="this.style.background='${warn?'rgba(245,158,11,.06)':'rgba(255,255,255,.03)'}'" onmouseout="this.style.background='${warn?'rgba(245,158,11,.03)':''}'">
       <td style="padding:11px 12px;border-bottom:1px solid var(--border)"><span style="font-family:monospace;color:var(--accent);font-size:13px;letter-spacing:.05em">${nfcEsc(e.uid||'—')}</span></td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border)">${nfcEsc(e.name||'—')}</td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
-        ${e.type==='DESFIRE'
-          ?'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)">DESFIRE</span>'
+        ${isDesfire
+          ?`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)">DESFIRE</span>${warn?'<i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:11px;margin-left:4px" title="Ri-enroll necessario"></i>':''}`
           :'<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(94,234,212,.15);color:#5eecd4;border:1px solid rgba(94,234,212,.3)">'+(e.type||'PLAIN')+'</span>'}
       </td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-size:12px">${nfcFmtDate(e.added_at)}</td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border);color:var(--dim);font-size:12px">${nfcFmtDate(e.last_access)}</td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:13px">${e.access_count||0}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid var(--border);text-align:center">
+        <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer" title="${e.disabled?'Disabilitato — clicca per abilitare':'Abilitato — clicca per disabilitare'}">
+          <input type="checkbox" ${e.disabled?'':'checked'} onchange="nfcToggleActive('${nfcEsc(e.uid)}',this.checked)" style="opacity:0;width:0;height:0;position:absolute">
+          <span style="position:absolute;inset:0;border-radius:20px;background:${e.disabled?'#374151':'#22c55e'};transition:background .2s"></span>
+          <span style="position:absolute;top:3px;left:${e.disabled?'3px':'19px'};width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s"></span>
+        </label>
+      </td>
       <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           <button onclick="nfcOpenEdit('${nfcEsc(e.uid)}','${nfcEsc(e.name)}')" style="padding:4px 10px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer"><i class="bi bi-pencil"></i> Modifica</button>
           <button onclick="nfcOpenDelete('${nfcEsc(e.uid)}','${nfcEsc(e.name)}')" style="padding:4px 10px;font-size:12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer"><i class="bi bi-trash3"></i> Rimuovi</button>
         </div>
       </td>
-    </tr>`).join('');
+    </tr>`;}).join('');
+}
+
+async function nfcToggleActive(uid, checked){
+  try{
+    const r=await fetch('/api/whitelist/'+encodeURIComponent(uid)+'/toggle',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({disabled:!checked})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||r.statusText);
+    toastCenter(checked?'Tag abilitato':'Tag disabilitato',true);
+    await loadNfcWhitelist();
+  }catch(e){
+    toastCenter('Errore: '+e.message,false);
+    await loadNfcWhitelist();
+  }
 }
 
 // ── Enrollment (SSE-driven) ───────────────────────────────────────────────────
@@ -1053,8 +1112,8 @@ function nfcStartAdd(){
 
 async function nfcDoStart(){
   const name=document.getElementById('nfcNameInput').value.trim();
-  if(!name){toastCenter('Inserisci un nominativo','err');return;}
-  if(name.length>64){toastCenter('Nome max 64 caratteri','err');return;}
+  if(!name){toastCenter('Inserisci un nominativo',false);return;}
+  if(name.length>64){toastCenter('Nome max 64 caratteri',false);return;}
 
   document.getElementById('nfcStepMode').style.display='none';
   document.getElementById('nfcStepListen').style.display='';
@@ -1149,7 +1208,7 @@ function nfcHandleSSE(d){
       document.getElementById('nfcStepListen').style.display='none';
       document.getElementById('nfcStepDetected').style.display='none';
       document.getElementById('nfcStepFormatOK').style.display='none';
-      toastCenter('Tag '+(d.name||d.uid)+' aggiunto','ok');
+      toastCenter('Tag '+(d.name||d.uid)+' aggiunto',true);
       setTimeout(()=>{nfcCloseAdd();loadNfcWhitelist();},1400);
       break;
     case 'error':
@@ -1205,20 +1264,23 @@ async function nfcSync(){
     const d=await r.json();
     loadNfcWhitelist();
     nfcShowSyncModal(d);
-  }catch(e){toastCenter('Sync fallita: '+e,'err');}
+  }catch(e){toastCenter('Sync fallita: '+e,false);}
 }
 
 function nfcShowSyncModal(d){
   const esp32Only=d.esp32_only||[];
   const jsonOnly=d.json_only||[];
   const inSync=d.in_sync;
+  const reEnroll=document.getElementById('keyReEnrollBanner')?.style.display!=='none';
 
   document.getElementById('nfcSyncEsp32Count').textContent=d.esp32_count??'—';
   document.getElementById('nfcSyncJsonCount').textContent=d.json_count??'—';
 
+  // Colori in base allo stato
+  const accentColor=inSync?(reEnroll?'#f59e0b':'#22c55e'):'#f97316';
+
   // Freccia e colori contatori
   const arrow=document.getElementById('nfcSyncArrow');
-  const accentColor=inSync?'#22c55e':'#f97316';
   arrow.textContent=inSync?'↔':'≠';
   arrow.style.color=accentColor;
   document.getElementById('nfcSyncEsp32Count').style.color=accentColor;
@@ -1226,8 +1288,8 @@ function nfcShowSyncModal(d){
 
   // Icona e titolo header
   const icon=document.getElementById('nfcSyncModalIcon');
-  icon.textContent=inSync?'✓':'!';
-  icon.style.background=inSync?'rgba(34,197,94,.15)':'rgba(249,115,22,.15)';
+  icon.textContent=inSync?(reEnroll?'⚠':'✓'):'!';
+  icon.style.background=inSync?(reEnroll?'rgba(245,158,11,.15)':'rgba(34,197,94,.15)'):'rgba(249,115,22,.15)';
   icon.style.color=accentColor;
   icon.style.borderRadius='50%';
   icon.style.width='40px';
@@ -1236,11 +1298,16 @@ function nfcShowSyncModal(d){
   icon.style.alignItems='center';
   icon.style.justifyContent='center';
   icon.style.fontSize='20px';
-  document.getElementById('nfcSyncModalTitle').textContent=inSync?'In sync':'Differenze rilevate';
+  document.getElementById('nfcSyncModalTitle').textContent=inSync?(reEnroll?'Chiave cambiata':'In sync'):'Differenze rilevate';
 
   // Stato corrispondenza
   const status=document.getElementById('nfcSyncStatus');
-  if(inSync){
+  if(inSync && reEnroll){
+    status.textContent='I tag corrispondono, ma la chiave AES è cambiata — non autenticano più. Re-enrolla tutti i tag.';
+    status.style.background='rgba(245,158,11,.08)';
+    status.style.border='1px solid rgba(245,158,11,.25)';
+    status.style.color='#f59e0b';
+  } else if(inSync){
     status.textContent='I tag su ESP32 e nel JSON corrispondono esattamente.';
     status.style.background='rgba(34,197,94,.08)';
     status.style.border='1px solid rgba(34,197,94,.25)';
@@ -1292,15 +1359,15 @@ function nfcOpenEdit(uid,name){
 
 async function nfcConfirmEdit(){
   const name=document.getElementById('nfcEditName').value.trim();
-  if(!name){toastCenter('Inserisci un nominativo','err');return;}
+  if(!name){toastCenter('Inserisci un nominativo',false);return;}
   try{
     const r=await fetch('/api/whitelist/'+encodeURIComponent(nfcEditTarget),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
     const d=await r.json();
-    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),'err');return;}
-    toastCenter('Nominativo aggiornato','ok');
+    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),false);return;}
+    toastCenter('Nominativo aggiornato',true);
     document.getElementById('nfcEditModal').classList.remove('show');
     loadNfcWhitelist();
-  }catch(e){toastCenter('Errore di rete','err');}
+  }catch(e){toastCenter('Errore di rete',false);}
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -1316,11 +1383,11 @@ async function nfcConfirmDelete(){
   try{
     const r=await fetch('/api/whitelist/'+encodeURIComponent(nfcDeleteTarget),{method:'DELETE'});
     const d=await r.json();
-    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),'err');return;}
-    toastCenter('Tag rimosso','ok');
+    if(!r.ok){toastCenter('Errore: '+(d.error||r.statusText),false);return;}
+    toastCenter('Tag rimosso',true);
     document.getElementById('nfcDeleteModal').classList.remove('show');
     loadNfcWhitelist();
-  }catch(e){toastCenter('Errore di rete','err');}
+  }catch(e){toastCenter('Errore di rete',false);}
 }
 
 // ── Clear All ────────────────────────────────────────────────────────────────
@@ -1336,10 +1403,10 @@ function nfcClearAll(){
     fetch('/api/whitelist/clearall',{method:'POST'})
       .then(r=>r.json())
       .then(d=>{
-        toastCenter(d.esp32_cleared?'Tutti i tag rimossi (JSON + ESP32)':'Tag rimossi dal JSON (ESP32 non raggiunto)',d.esp32_cleared?'ok':'err');
+        toastCenter(d.esp32_cleared?'Tutti i tag rimossi (JSON + ESP32)':'Tag rimossi dal JSON (ESP32 non raggiunto)',d.esp32_cleared);
         loadNfcWhitelist();
       })
-      .catch(e=>toastCenter('Errore: '+e,'err'));
+      .catch(e=>toastCenter('Errore: '+e,false));
   });
 }
 

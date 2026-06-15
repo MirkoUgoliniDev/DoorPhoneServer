@@ -2352,6 +2352,7 @@ function updateKeyUI(d){
   const fp=document.getElementById('keyFP');
   const btnGen=document.getElementById('btnKeyGen');
   const btnForce=document.getElementById('btnKeyGenForce');
+  const btnForceHint=document.getElementById('btnKeyGenForceHint');
   const banner=document.getElementById('keyReEnrollBanner');
   if(!dot)return;
   if(d.present){
@@ -2361,6 +2362,7 @@ function updateKeyUI(d){
     fp.textContent=(d.fp||'—').toUpperCase();
     if(btnGen)btnGen.style.display='none';
     if(btnForce)btnForce.style.display='';
+    if(btnForceHint)btnForceHint.style.display='';
   } else {
     dot.style.background='var(--red)';
     lbl.textContent='Assente';
@@ -2368,6 +2370,7 @@ function updateKeyUI(d){
     fp.textContent='—';
     if(btnGen)btnGen.style.display='';
     if(btnForce)btnForce.style.display='none';
+    if(btnForceHint)btnForceHint.style.display='none';
   }
   if(banner)banner.style.display=d.re_enroll_needed?'flex':'none';
 }
