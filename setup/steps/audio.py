@@ -80,7 +80,7 @@ class StepAudioConfig(Step):
                                  f'<outputvolcontroldevice>{ctrl}</outputvolcontroldevice>', content)
                 content = re.sub(r'<outputmutecontroldevice>[^<]*</outputmutecontroldevice>',
                                  f'<outputmutecontroldevice>{ctrl}</outputmutecontroldevice>', content)
-                xml_src.write_text(content, encoding="utf-8")
+                runner.write(xml_src, content, sudo=True)
                 runner.log(f"  ✓ XML outputdevice → {ctrl}")
             else:
                 runner.log("  ⚠ Controllo mixer non rilevato — outputdevice nel XML non aggiornato")
