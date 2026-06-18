@@ -821,6 +821,67 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 </div>
 </div>
 
+<!-- Modal Leggi tessera — modalità lettura one-shot -->
+<div class="modal-overlay" id="nfcReadModal">
+<div class="modal-box" style="width:440px;max-width:96vw">
+  <div class="modal-header">
+    <div class="modal-icon info"><i class="bi bi-search"></i></div>
+    <div class="modal-title" id="nfcReadTitle">Leggi tessera</div>
+  </div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Attesa tap -->
+    <div id="nfcReadStepWait">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div style="position:relative;width:80px;height:80px;margin:0 auto">
+          <svg width="80" height="80" style="transform:rotate(-90deg)">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" stroke-width="6"/>
+            <circle id="nfcReadCdCircle" cx="40" cy="40" r="34" fill="none" stroke="var(--accent)" stroke-width="6"
+              stroke-linecap="round" stroke-dasharray="213.6" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear"/>
+          </svg>
+          <div id="nfcReadCdNum" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:22px;font-weight:700;color:var(--accent)">30</div>
+        </div>
+        <div id="nfcReadWaitMsg" style="font-size:14px;color:var(--dim);text-align:center">Avvicina la tessera da leggere…</div>
+      </div>
+    </div>
+
+    <!-- Esito -->
+    <div id="nfcReadStepResult" style="display:none">
+      <!-- Verdetto -->
+      <div id="nfcReadVerdict" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:8px;margin-bottom:12px">
+        <i id="nfcReadVerdictIcon" style="font-size:24px"></i>
+        <div id="nfcReadVerdictText" style="font-weight:700;font-size:14px"></div>
+      </div>
+      <div style="background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:14px 18px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">UID</div>
+          <div id="nfcReadUID" style="font-family:monospace;font-size:15px;color:var(--accent);font-weight:700;letter-spacing:.05em">—</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Stato crittografico</div>
+          <div id="nfcReadCrypto" style="font-size:14px">—</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">In whitelist</div>
+          <div id="nfcReadWhitelist" style="font-size:14px">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Errore -->
+    <div id="nfcReadStepError" style="display:none;text-align:center">
+      <i class="bi bi-exclamation-triangle" style="font-size:36px;color:#ef4444;opacity:.7;display:block;margin-bottom:10px"></i>
+      <div id="nfcReadErrorMsg" style="color:var(--dim)"></div>
+    </div>
+
+  </div>
+  <div class="modal-footer">
+    <button class="modal-btn cancel" onclick="nfcCloseRead()">Chiudi</button>
+    <button class="modal-btn primary" id="nfcReadRetryBtn" style="display:none" onclick="nfcReadTag()">Leggi un'altra</button>
+  </div>
+</div>
+</div>
+
 <!-- Modal Modifica -->
 <div class="modal-overlay" id="nfcEditModal">
 <div class="modal-box" style="width:380px;max-width:95vw">
@@ -836,48 +897,6 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   <div class="modal-footer">
     <button class="modal-btn cancel" onclick="document.getElementById('nfcEditModal').classList.remove('show')">Annulla</button>
     <button class="modal-btn primary" onclick="nfcConfirmEdit()">Salva</button>
-  </div>
-</div>
-</div>
-
-<!-- Modal Sync Detail -->
-<div class="modal-overlay" id="nfcSyncModal">
-<div class="modal-box" style="width:480px;max-width:96vw">
-  <div class="modal-header">
-    <div class="modal-icon" id="nfcSyncModalIcon" style="font-size:20px">—</div>
-    <div class="modal-title" id="nfcSyncModalTitle">Sync ESP32</div>
-  </div>
-  <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
-    <!-- Riepilogo conteggi -->
-    <div style="display:flex;gap:12px">
-      <div style="flex:1;background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">ESP32</div>
-        <div id="nfcSyncEsp32Count" style="font-size:28px;font-weight:700;color:var(--accent)">—</div>
-        <div style="font-size:11px;color:var(--dim)">tag in NVS</div>
-      </div>
-      <div style="display:flex;align-items:center;font-size:22px;color:var(--dim);padding:0 4px" id="nfcSyncArrow">↔</div>
-      <div style="flex:1;background:#0a0f1a;border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">JSON</div>
-        <div id="nfcSyncJsonCount" style="font-size:28px;font-weight:700;color:var(--accent)">—</div>
-        <div style="font-size:11px;color:var(--dim)">tag nel file</div>
-      </div>
-    </div>
-    <!-- Stato corrispondenza -->
-    <div id="nfcSyncStatus" style="text-align:center;padding:10px;border-radius:8px;font-weight:600;font-size:14px"></div>
-    <!-- Dettaglio differenze (visibile solo se non in sync) -->
-    <div id="nfcSyncDiff" style="display:none;flex-direction:column;gap:10px">
-      <div id="nfcSyncEsp32Only" style="display:none">
-        <div style="font-size:12px;color:#f97316;font-weight:600;margin-bottom:6px"><i class="bi bi-exclamation-circle"></i> Solo su ESP32 (non nel JSON):</div>
-        <div id="nfcSyncEsp32OnlyList" style="font-family:monospace;font-size:12px;background:#0a0f1a;border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:3px"></div>
-      </div>
-      <div id="nfcSyncJsonOnly" style="display:none">
-        <div style="font-size:12px;color:#f97316;font-weight:600;margin-bottom:6px"><i class="bi bi-exclamation-circle"></i> Solo nel JSON (non su ESP32):</div>
-        <div id="nfcSyncJsonOnlyList" style="font-family:monospace;font-size:12px;background:#0a0f1a;border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:3px"></div>
-      </div>
-    </div>
-  </div>
-  <div class="modal-footer">
-    <button class="modal-btn cancel" onclick="document.getElementById('nfcSyncModal').classList.remove('show')">Chiudi</button>
   </div>
 </div>
 </div>
@@ -914,8 +933,8 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
     <button class="btn-o btn-o-blue btn-sm" onclick="nfcStartAdd()" id="nfcAddBtn">
       <i class="bi bi-plus-circle"></i> Aggiungi Tag
     </button>
-    <button class="btn-o btn-o-dim btn-sm" onclick="nfcSync()">
-      <i class="bi bi-arrow-repeat"></i> Sync ESP32
+    <button class="btn-o btn-o-dim btn-sm" onclick="nfcReadTag()" id="nfcReadBtn">
+      <i class="bi bi-search"></i> Leggi tessera
     </button>
     <button class="btn-o btn-o-red btn-sm" onclick="nfcClearAll()">
       <i class="bi bi-trash3-fill"></i> Rimuovi tutti
@@ -945,10 +964,12 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 
 <!-- Chiave AES DESFire -->
 <div id="esp32KeyCard" class="card" style="margin-top:16px">
-  <div style="margin-bottom:16px">
-    <h2 style="margin:0 0 6px"><i class="bi bi-key"></i> Chiave AES DESFire</h2>
-    <p style="margin:0;font-size:12px;color:var(--dim);line-height:1.5">Chiave crittografica usata per autenticare le tessere <b>DESFIRE</b>. È generata una sola volta e salvata sull'ESP32. Non va eliminata: se la rigeneri, tutte le tessere DESFIRE dovranno essere ri-enrollate.</p>
+  <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="esp32KeyToggle()">
+    <h2 style="margin:0"><i class="bi bi-key"></i> Chiave AES DESFire</h2>
+    <i id="esp32KeyChevron" class="bi bi-chevron-down" style="color:var(--dim);transition:transform .25s"></i>
   </div>
+  <div id="esp32KeyBody" style="display:none;margin-top:12px">
+  <p style="margin:0 0 16px;font-size:12px;color:var(--dim);line-height:1.5">Chiave crittografica usata per autenticare le tessere <b>DESFIRE</b>. È generata una sola volta e salvata sull'ESP32. Non va eliminata: se la rigeneri, tutte le tessere DESFIRE dovranno essere ri-enrollate.</p>
 
   <div style="display:flex;align-items:flex-start;gap:32px;flex-wrap:wrap">
     <!-- Stato chiave -->
@@ -983,6 +1004,7 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
       </div>
     </div>
   </div>
+  </div>
 </div>
 
 <!-- Log USB seriale -->
@@ -1010,12 +1032,21 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 <script>
 // ── NFC Whitelist (nuovo protocollo SSE) ──────────────────────────────────────
 let nfcData=[], nfcCdTimer=null, nfcEnrollSrc=null, nfcCdSec=30;
+let nfcReadSrc=null, nfcReadCdTimer=null, nfcReadCdSec=30;
 let nfcEditTarget='', nfcDeleteTarget='';
 let nfcLogTimer=null;
 
 function nfcLogToggle(){
   const body=document.getElementById('nfcLogBody');
   const chevron=document.getElementById('nfcLogChevron');
+  const open=body.style.display==='none';
+  body.style.display=open?'block':'none';
+  chevron.style.transform=open?'rotate(180deg)':'';
+}
+
+function esp32KeyToggle(){
+  const body=document.getElementById('esp32KeyBody');
+  const chevron=document.getElementById('esp32KeyChevron');
   const open=body.style.display==='none';
   body.style.display=open?'block':'none';
   chevron.style.transform=open?'rotate(180deg)':'';
@@ -1255,96 +1286,128 @@ function nfcUpdateCd(){
   document.getElementById('nfcCdCircle').style.strokeDashoffset=213.6*(1-Math.max(0,nfcCdSec)/30);
 }
 
-// ── Sync ─────────────────────────────────────────────────────────────────────
+// ── Leggi tessera (modalità lettura one-shot) ─────────────────────────────────
 
-async function nfcSync(){
+async function nfcReadTag(){
+  // Reset UI del modal
+  document.getElementById('nfcReadStepWait').style.display='';
+  document.getElementById('nfcReadStepResult').style.display='none';
+  document.getElementById('nfcReadStepError').style.display='none';
+  document.getElementById('nfcReadRetryBtn').style.display='none';
+  document.getElementById('nfcReadTitle').textContent='Leggi tessera';
+  document.getElementById('nfcReadWaitMsg').textContent='Avvicina la tessera da leggere…';
+  document.getElementById('nfcReadModal').classList.add('show');
+
+  nfcReadCdSec=30; nfcReadUpdateCd();
+  clearInterval(nfcReadCdTimer);
+  nfcReadCdTimer=setInterval(()=>{nfcReadCdSec--;nfcReadUpdateCd();if(nfcReadCdSec<=0)clearInterval(nfcReadCdTimer);},1000);
+
   try{
-    const r=await fetch('/api/whitelist/sync');
-    if(!r.ok)throw new Error(r.statusText);
-    const d=await r.json();
-    loadNfcWhitelist();
-    nfcShowSyncModal(d);
-  }catch(e){toastCenter('Sync fallita: '+e,false);}
+    const r=await fetch('/api/whitelist/identify',{method:'POST'});
+    if(!r.ok){
+      const d=await r.json().catch(()=>({}));
+      nfcReadShowError(d.error||r.statusText);
+      return;
+    }
+  }catch(e){ nfcReadShowError('Errore di rete'); return; }
+
+  if(nfcReadSrc){nfcReadSrc.close();nfcReadSrc=null;}
+  nfcReadSrc=new EventSource('/api/whitelist/enroll/events');
+  nfcReadSrc.onmessage=(ev)=>{ try{ nfcReadHandleSSE(JSON.parse(ev.data)); }catch(_){} };
+  nfcReadSrc.onerror=()=>{ nfcReadSrc.close(); nfcReadSrc=null; };
 }
 
-function nfcShowSyncModal(d){
-  const esp32Only=d.esp32_only||[];
-  const jsonOnly=d.json_only||[];
-  const inSync=d.in_sync;
-  const reEnroll=document.getElementById('keyReEnrollBanner')?.style.display!=='none';
+function nfcReadHandleSSE(d){
+  switch(d.event){
+    case 'waiting':
+      document.getElementById('nfcReadWaitMsg').textContent=d.msg||'Avvicina la tessera da leggere…';
+      break;
+    case 'identified':
+      clearInterval(nfcReadCdTimer);
+      if(nfcReadSrc){nfcReadSrc.close();nfcReadSrc=null;}
+      nfcReadShowResult(d);
+      break;
+    case 'error':
+      clearInterval(nfcReadCdTimer);
+      if(nfcReadSrc){nfcReadSrc.close();nfcReadSrc=null;}
+      if(d.code==='timeout'){nfcReadShowError('Timeout: nessuna tessera rilevata.');}
+      else{nfcReadShowError(d.msg||'Errore sconosciuto');}
+      break;
+  }
+}
 
-  document.getElementById('nfcSyncEsp32Count').textContent=d.esp32_count??'—';
-  document.getElementById('nfcSyncJsonCount').textContent=d.json_count??'—';
+function nfcReadShowResult(d){
+  document.getElementById('nfcReadStepWait').style.display='none';
+  document.getElementById('nfcReadStepError').style.display='none';
+  document.getElementById('nfcReadStepResult').style.display='';
+  document.getElementById('nfcReadRetryBtn').style.display='';
+  document.getElementById('nfcReadTitle').textContent='Esito lettura';
 
-  // Colori in base allo stato
-  const accentColor=inSync?(reEnroll?'#f59e0b':'#22c55e'):'#f97316';
+  document.getElementById('nfcReadUID').textContent=d.uid||'—';
 
-  // Freccia e colori contatori
-  const arrow=document.getElementById('nfcSyncArrow');
-  arrow.textContent=inSync?'↔':'≠';
-  arrow.style.color=accentColor;
-  document.getElementById('nfcSyncEsp32Count').style.color=accentColor;
-  document.getElementById('nfcSyncJsonCount').style.color=accentColor;
+  // Stato crittografico (dall'ESP32)
+  const crypto=document.getElementById('nfcReadCrypto');
+  const cryptoOk=d.tag_type==='DESFIRE-CONFIGURED';
+  crypto.innerHTML=nfcReadCryptoBadge(d.tag_type);
 
-  // Icona e titolo header
-  const icon=document.getElementById('nfcSyncModalIcon');
-  icon.textContent=inSync?(reEnroll?'⚠':'✓'):'!';
-  icon.style.background=inSync?(reEnroll?'rgba(245,158,11,.15)':'rgba(34,197,94,.15)'):'rgba(249,115,22,.15)';
-  icon.style.color=accentColor;
-  icon.style.borderRadius='50%';
-  icon.style.width='40px';
-  icon.style.height='40px';
-  icon.style.display='flex';
-  icon.style.alignItems='center';
-  icon.style.justifyContent='center';
-  icon.style.fontSize='20px';
-  document.getElementById('nfcSyncModalTitle').textContent=inSync?(reEnroll?'Chiave cambiata':'In sync'):'Differenze rilevate';
-
-  // Stato corrispondenza
-  const status=document.getElementById('nfcSyncStatus');
-  if(inSync && reEnroll){
-    status.textContent='I tag corrispondono, ma la chiave AES è cambiata — non autenticano più. Re-enrolla tutti i tag.';
-    status.style.background='rgba(245,158,11,.08)';
-    status.style.border='1px solid rgba(245,158,11,.25)';
-    status.style.color='#f59e0b';
-  } else if(inSync){
-    status.textContent='I tag su ESP32 e nel JSON corrispondono esattamente.';
-    status.style.background='rgba(34,197,94,.08)';
-    status.style.border='1px solid rgba(34,197,94,.25)';
-    status.style.color='#22c55e';
+  // Presenza in whitelist (dal server)
+  const wl=document.getElementById('nfcReadWhitelist');
+  if(d.known){
+    const dis=d.disabled?' <span style="color:#f97316">(disabilitata)</span>':'';
+    wl.innerHTML='<span style="color:#22c55e;font-weight:600">Sì</span> — '+nfcEsc(d.name||'')+dis+' · '+(d.access_count||0)+' accessi';
   } else {
-    const parts=[];
-    if(esp32Only.length) parts.push(esp32Only.length+' tag solo su ESP32');
-    if(jsonOnly.length)  parts.push(jsonOnly.length+' tag solo nel JSON');
-    status.textContent=parts.join(' · ')+' — i dati non corrispondono.';
-    status.style.background='rgba(249,115,22,.08)';
-    status.style.border='1px solid rgba(249,115,22,.25)';
-    status.style.color='#f97316';
+    wl.innerHTML='<span style="color:#f97316;font-weight:600">No</span> — UID non registrato';
   }
 
-  // Dettaglio differenze
-  const diffEl=document.getElementById('nfcSyncDiff');
-  if(!inSync){
-    diffEl.style.cssText='display:flex;flex-direction:column;gap:10px';
-    // ESP32-only
-    const e32El=document.getElementById('nfcSyncEsp32Only');
-    if(esp32Only.length){
-      e32El.style.display='';
-      document.getElementById('nfcSyncEsp32OnlyList').innerHTML=
-        esp32Only.map(u=>'<span style="color:var(--accent)">'+nfcEsc(u)+'</span>').join('');
-    } else { e32El.style.display='none'; }
-    // JSON-only
-    const jsEl=document.getElementById('nfcSyncJsonOnly');
-    if(jsonOnly.length){
-      jsEl.style.display='';
-      document.getElementById('nfcSyncJsonOnlyList').innerHTML=
-        jsonOnly.map(u=>'<span style="color:var(--accent)">'+nfcEsc(u)+'</span>').join('');
-    } else { jsEl.style.display='none'; }
+  // Verdetto complessivo
+  const v=document.getElementById('nfcReadVerdict');
+  const vi=document.getElementById('nfcReadVerdictIcon');
+  const vt=document.getElementById('nfcReadVerdictText');
+  if(cryptoOk && d.known && !d.disabled){
+    v.style.background='rgba(34,197,94,.1)'; v.style.border='1px solid rgba(34,197,94,.3)';
+    vi.className='bi bi-check-circle-fill'; vi.style.color='#22c55e';
+    vt.textContent='Tessera operativa — apre il portone';
+  } else if(cryptoOk && d.known && d.disabled){
+    v.style.background='rgba(249,115,22,.1)'; v.style.border='1px solid rgba(249,115,22,.3)';
+    vi.className='bi bi-pause-circle-fill'; vi.style.color='#f97316';
+    vt.textContent='Tessera valida ma disabilitata';
+  } else if(cryptoOk && !d.known){
+    v.style.background='rgba(249,115,22,.1)'; v.style.border='1px solid rgba(249,115,22,.3)';
+    vi.className='bi bi-shield-exclamation'; vi.style.color='#f97316';
+    vt.textContent='Tessera di questo impianto ma non in whitelist';
   } else {
-    diffEl.style.display='none';
+    v.style.background='rgba(239,68,68,.1)'; v.style.border='1px solid rgba(239,68,68,.3)';
+    vi.className='bi bi-x-circle-fill'; vi.style.color='#ef4444';
+    vt.textContent=d.tag_type==='DESFIRE-NEW'?'DESFire vergine — da inizializzare':'Tessera non riconosciuta';
   }
+}
 
-  document.getElementById('nfcSyncModal').classList.add('show');
+function nfcReadCryptoBadge(t){
+  if(t==='DESFIRE-CONFIGURED')return'<span style="color:#22c55e;font-weight:600">DESFire con la nostra chiave AES</span>';
+  if(t==='DESFIRE-NEW')return'<span style="color:#f97316;font-weight:600">DESFire vergine (chiave di fabbrica)</span>';
+  if(t==='PLAIN')return'<span style="color:#ef4444;font-weight:600">Tag PLAIN — non supportato</span>';
+  return nfcEsc(t||'—');
+}
+
+function nfcReadShowError(msg){
+  clearInterval(nfcReadCdTimer);
+  document.getElementById('nfcReadStepWait').style.display='none';
+  document.getElementById('nfcReadStepResult').style.display='none';
+  document.getElementById('nfcReadStepError').style.display='';
+  document.getElementById('nfcReadErrorMsg').textContent=msg;
+  document.getElementById('nfcReadRetryBtn').style.display='';
+}
+
+function nfcCloseRead(){
+  clearInterval(nfcReadCdTimer);
+  if(nfcReadSrc){nfcReadSrc.close();nfcReadSrc=null;}
+  fetch('/api/whitelist/enroll/cancel',{method:'DELETE'}).catch(()=>{});
+  document.getElementById('nfcReadModal').classList.remove('show');
+}
+
+function nfcReadUpdateCd(){
+  document.getElementById('nfcReadCdNum').textContent=nfcReadCdSec;
+  document.getElementById('nfcReadCdCircle').style.strokeDashoffset=213.6*(1-Math.max(0,nfcReadCdSec)/30);
 }
 
 // ── Edit ─────────────────────────────────────────────────────────────────────
@@ -1443,6 +1506,10 @@ document.getElementById('nfcLogAuto').addEventListener('change',nfcLogAutoToggle
 // (viene chiamato da panel.js al cambio tab)
 function _nfcPageActivated(){
   loadNfcWhitelist();
+  // Aggiorna sempre lo stato chiave/banner re-enroll entrando nel tab, così il
+  // banner riflette il flag re_enroll_needed reale anche al reload o quando si
+  // arriva da un tab diverso da ESP32 (prima veniva aggiornato solo da lì).
+  if(typeof pollKeyStatus==='function')pollKeyStatus();
   if(document.getElementById('nfcLogAuto').checked){
     nfcLogRefresh();
     clearInterval(nfcLogTimer);

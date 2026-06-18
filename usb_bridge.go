@@ -214,11 +214,6 @@ type NfcEvent struct {
 	TagID string
 }
 
-// tagListResult raccoglie il risultato di una richiesta TAG-LIST.
-type tagListResult struct {
-	tags map[string]string
-}
-
 // normalizeUID porta un UID hex al formato standard 14 caratteri (7 byte).
 // I tag a 4 byte (8 hex) vengono paddati con zeri: "1A09C601" → "1A09C601000000".
 // UIDs già a 14 char vengono restituiti invariati.
@@ -240,7 +235,8 @@ type USBBridge struct {
 	NfcEvt  <-chan NfcEvent
 	State   *esp32State
 
-	// OnDoorUnlock è chiamato quando UID-OK viene approvato dalla whitelist.
+	// OnDoorUnlock è chiamato quando un EVT nfc <uid> di una tessera DESFire
+	// crittograficamente valida risulta autorizzato nella whitelist server.
 	// Permette di inviare "SET unlockdoor pulse" al bridge relay senza accoppiamento diretto.
 	OnDoorUnlock func()
 
@@ -256,14 +252,9 @@ type USBBridge struct {
 
 	nfcMgr *NFCWhitelistManager
 
-	// pending: risposte attese da un singolo comando (ACK, TAG-DEL)
+	// pending: risposte attese da un singolo comando (ACK, KEY-STATUS, ...)
 	pendingMu  sync.Mutex
 	pendingMap map[string]chan string
-
-	// TAG-LIST: raccolta multi-riga
-	tagListMu  sync.Mutex
-	tagListCh  chan tagListResult
-	tagListBuf map[string]string
 }
 
 // NewUSBBridge crea il bridge per il ruolo indicato ("RFID" o "RELAY").
@@ -393,34 +384,6 @@ func (b *USBBridge) SendAndWait(cmd, ackKey string, t time.Duration) (string, bo
 	case <-time.After(t):
 		b.clearPending(ackKey)
 		return "", false
-	}
-}
-
-// SendTagList invia TAG-LIST e raccoglie le risposte fino a TAG-LIST-END (timeout t).
-// Ritorna mappa uid→"" o errore.
-func (b *USBBridge) SendTagList(t time.Duration) (map[string]string, error) {
-	ch := make(chan tagListResult, 1)
-
-	b.tagListMu.Lock()
-	if b.tagListCh != nil {
-		b.tagListMu.Unlock()
-		return nil, fmt.Errorf("TAG-LIST già in corso")
-	}
-	b.tagListCh = ch
-	b.tagListBuf = make(map[string]string)
-	b.tagListMu.Unlock()
-
-	b.Send("TAG-LIST\n")
-
-	select {
-	case result := <-ch:
-		return result.tags, nil
-	case <-time.After(t):
-		b.tagListMu.Lock()
-		b.tagListCh = nil
-		b.tagListBuf = nil
-		b.tagListMu.Unlock()
-		return nil, fmt.Errorf("timeout TAG-LIST")
 	}
 }
 
@@ -555,13 +518,11 @@ func (b *USBBridge) dispatch(line string) {
 
 	switch {
 	case line == "UID-OK":
+		// Solo diagnostica: l'esito auth a bordo. L'apertura è decisa su EVT nfc.
 		b.State.addCard(ESP32CardLog{Time: time.Now(), Result: line})
 		b.drainOrSendCard(CardEvent{OK: true})
 		if b.nfcMgr != nil {
-			// Apre il portone solo se il tag è in whitelist e non disabilitato.
-			if b.nfcMgr.HandleUIDOK() && b.OnDoorUnlock != nil {
-				b.OnDoorUnlock()
-			}
+			b.nfcMgr.HandleUIDOK()
 		}
 
 	case line == "UID-KO":
@@ -610,8 +571,8 @@ func (b *USBBridge) dispatch(line string) {
 	case strings.HasPrefix(line, "ACK TAG-FORMAT PENDING"):
 		b.signalPending("ACK-FORMAT", "OK")
 
-	case strings.HasPrefix(line, "ACK TAG-CLEAR"):
-		b.signalPending("ACK-CLEAR", "OK")
+	case strings.HasPrefix(line, "ACK TAG-INFO PENDING"):
+		b.signalPending("ACK-INFO", "OK")
 
 	case strings.HasPrefix(line, "TAG-INFO "):
 		b.parseTagInfo(line)
@@ -641,32 +602,6 @@ func (b *USBBridge) dispatch(line string) {
 		if b.nfcMgr != nil {
 			b.nfcMgr.HandleFormatFail("format-fail")
 		}
-
-	case line == "TAG-DEL-OK":
-		b.signalPending("TAG-DEL", "OK")
-
-	case strings.HasPrefix(line, "TAG-DEL-FAIL"):
-		// "TAG-DEL-FAIL NOT-FOUND" o "TAG-DEL-FAIL BAD-UID"
-		suffix := strings.TrimSpace(strings.TrimPrefix(line, "TAG-DEL-FAIL"))
-		if suffix != "" {
-			b.signalPending("TAG-DEL", "FAIL "+suffix)
-		} else {
-			b.signalPending("TAG-DEL", "FAIL")
-		}
-
-	case line == "TAG-LIST-START":
-		b.tagListMu.Lock()
-		if b.tagListBuf != nil {
-			b.tagListBuf = make(map[string]string) // reset buffer
-		}
-		b.tagListMu.Unlock()
-
-	case strings.HasPrefix(line, "TAG-ENTRY "):
-		// "TAG-ENTRY <n> <uid>"
-		b.handleTagEntry(line)
-
-	case strings.HasPrefix(line, "TAG-LIST-END"):
-		b.handleTagListEnd()
 
 	case strings.HasPrefix(line, "FLOOR-P"):
 		b.parseFloor(line)
@@ -705,7 +640,11 @@ func (b *USBBridge) parseAndSendGPIO(line string) {
 		uid := normalizeUID(parts[2])
 		b.State.addCard(ESP32CardLog{Time: time.Now(), Result: line})
 		if b.nfcMgr != nil {
-			b.nfcMgr.HandleNFCEvent(uid)
+			// EVT nfc arriva solo per tessere DESFire crittograficamente valide.
+			// Il server decide l'apertura in base alla whitelist.
+			if b.nfcMgr.HandleNFCEvent(uid) && b.OnDoorUnlock != nil {
+				b.OnDoorUnlock()
+			}
 		}
 		select {
 		case b.nfcCh <- NfcEvent{TagID: uid}:
@@ -777,38 +716,6 @@ func (b *USBBridge) parseTagFormatOK(line string) {
 		// CRITICO: invia TAG-ENROLL prima di notificare SSE
 		b.Send("TAG-ENROLL\n")
 		b.nfcMgr.HandleTagFormatOK(uid)
-	}
-}
-
-// handleTagEntry raccoglie "TAG-ENTRY <n> <uid>" nella mappa TAG-LIST.
-func (b *USBBridge) handleTagEntry(line string) {
-	parts := strings.Fields(line)
-	if len(parts) < 3 {
-		log.Printf("[USB] TAG-ENTRY malformato: %q", line)
-		return
-	}
-	uid := normalizeUID(parts[2])
-	b.tagListMu.Lock()
-	if b.tagListBuf != nil {
-		b.tagListBuf[uid] = ""
-	}
-	b.tagListMu.Unlock()
-}
-
-// handleTagListEnd finalizza la raccolta TAG-LIST e segnala il canale.
-func (b *USBBridge) handleTagListEnd() {
-	b.tagListMu.Lock()
-	ch := b.tagListCh
-	buf := b.tagListBuf
-	b.tagListCh = nil
-	b.tagListBuf = nil
-	b.tagListMu.Unlock()
-
-	if ch != nil {
-		select {
-		case ch <- tagListResult{tags: buf}:
-		default:
-		}
 	}
 }
 

@@ -178,18 +178,11 @@ func Init(file string, ServerIndex string) {
 		go NewSmartcard(bridgeRFID).Run(ctx)
 		bridgeRFID.SetNFCManager(b.NFCWhitelist)
 
-		// Sync NFC whitelist all'avvio: attende la connessione USB poi confronta NVS ↔ JSON
-		// e riconcilia la chiave AES DESFire (EnsureKey).
+		// Modello crypto-only: la whitelist vive solo sul server, niente più sync
+		// NVS ↔ JSON. All'avvio si attende la connessione USB e si riconcilia solo
+		// la chiave AES DESFire (EnsureKey).
 		go func() {
 			time.Sleep(8 * time.Second)
-			tags, err := bridgeRFID.SendTagList(5 * time.Second)
-			if err != nil {
-				log.Printf("[NFC] sync avvio fallita: %v", err)
-			} else {
-				result := b.NFCWhitelist.SyncFromESP32(tags)
-				log.Printf("[NFC] sync avvio: esp32=%v json=%v in_sync=%v",
-					result["esp32_count"], result["json_count"], result["in_sync"])
-			}
 			fp, err := bridgeRFID.EnsureKey()
 			if err != nil {
 				log.Printf("[NFC] EnsureKey fallita: %v", err)

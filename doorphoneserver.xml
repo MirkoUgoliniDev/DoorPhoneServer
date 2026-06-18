@@ -4,7 +4,7 @@
 
 	<accounts>
 		<account name="doorphoneserver-community" default="true">
-			<serverandport>192.168.1.54:64738</serverandport>
+			<serverandport>192.168.1.151:64738</serverandport>
 			<insecure>true</insecure>
 			<register>false</register>
 			<certificate>/home/doorphoneserver/mumble.pem</certificate>
@@ -20,9 +20,9 @@
 
 			<settings>
 				<singleinstance>true</singleinstance>
-				<outputdevice>PCM</outputdevice>
-				<outputvolcontroldevice>PCM</outputvolcontroldevice>
-				<outputmutecontroldevice>PCM</outputmutecontroldevice>
+				<outputdevice>Speaker</outputdevice>
+				<outputvolcontroldevice>Speaker</outputvolcontroldevice>
+				<outputmutecontroldevice>Speaker</outputmutecontroldevice>
 				<logfilenameandpath>/home/doorphoneserver/doorphoneserver.log</logfilenameandpath>
 				<logging>fileonly</logging>
 				<loglevel>info</loglevel>
@@ -106,7 +106,7 @@
 
 		<hardware>
 
-			<io backend="rpi">
+			<io backend="esp32">
 			  
 				<pulse leadingmsecs="1000" pulsemsecs="1000" trailingmsecs="1000"/>
 

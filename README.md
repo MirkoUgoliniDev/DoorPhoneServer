@@ -53,11 +53,11 @@ Nel pannello web (tab ESP32) i campi `rfid_port` e `relay_port` mostrano su qual
 ### Apertura porta con badge NFC
 
 ```
-Badge → ESP32-A: autenticazione AES-128 → UID-OK
+Badge DESFire → ESP32-A: auth AES-128 OK → EVT nfc <UID>
 Pi: verifica whitelist → SET unlockdoor pulse → ESP32-B: impulso relè
 ```
 
-I due ESP32 non comunicano mai direttamente. È il Pi che riceve `UID-OK` da ESP32-A, verifica la whitelist locale, e invia `SET unlockdoor pulse` a ESP32-B.
+Modello **crypto-only**: solo tessere DESFire (AES-128) sono accettate. L'ESP32-A non tiene alcuna whitelist locale — emette `EVT nfc <UID>` **solo** per tessere che superano l'auth AES (i cloni PLAIN dell'UID vengono scartati a bordo e non arrivano mai al Pi). I due ESP32 non comunicano mai direttamente: è il Pi che riceve `EVT nfc <UID>` da ESP32-A, verifica la whitelist locale, e invia `SET unlockdoor pulse` a ESP32-B. `UID-OK`/`UID-KO` restano solo come diagnostica dell'auth a bordo.
 
 ---
 
@@ -475,10 +475,8 @@ I numeri `pinno` sono numeri BCM. Con `backend="esp32"` i `pinno` vengono ignora
 | `GET-ROLE` | Richiesta ruolo → `HELLO RFID` |
 | `PING` | Watchdog keepalive (ogni 5s) → `PONG` |
 | `GET-STATE` | Richiesta stato corrente |
-| `TAG-SCAN` | Avvia auto-detect del prossimo tag NFC |
-| `TAG-DEL <uid>` | Rimuove tag dalla whitelist NVS |
-| `TAG-LIST` | Elenca tag in NVS |
-| `TAG-CLEAR` | Cancella tutta la whitelist NVS |
+| `TAG-SCAN` | Avvia auto-detect + enroll DESFire del prossimo tag |
+| `TAG-INFO` | Modalità lettura one-shot: identifica il prossimo tag (diagnostica) |
 | `KEY-STATUS` | Stato chiave AES-128 DESFire |
 | `KEY-GEN` | Genera chiave AES (solo se assente) |
 | `KEY-GEN FORCE` | Rigenera chiave (invalida tutti i badge) |
@@ -492,13 +490,14 @@ I numeri `pinno` sono numeri BCM. Con `backend="esp32"` i `pinno` vengono ignora
 | `HELLO RFID` | Auto-identificazione (boot + risposta GET-ROLE) |
 | `EVT p1 0` / `EVT p2 0` / `EVT p3 0` | Pulsante piano premuto (active-low) |
 | `RING-P1` / `RING-P2` / `RING-P3` | Chiamata dal piano |
-| `UID-OK` | Tessera autenticata → Pi apre porta su ESP32-B |
-| `UID-KO` | Tessera rifiutata |
-| `TAG-INFO <uid> PLAIN\|DESFIRE-CONFIGURED\|DESFIRE-NEW` | Tag identificato in auto-scan |
-| `TAG-ENROLLED <uid> PLAIN\|DESFIRE` | Tag aggiunto alla whitelist |
-| `TAG-FORMAT-OK <uid>` | DeSFire inizializzato — riavvicinare il tag |
+| `EVT nfc <uid>` | Tessera DESFire con auth AES OK → Pi verifica whitelist e apre porta su ESP32-B |
+| `UID-OK` | Diagnostica: auth a bordo riuscita (l'apertura è decisa dal Pi su `EVT nfc`) |
+| `UID-KO` | Diagnostica: tessera non DESFire o auth fallita (nessun `EVT nfc` emesso) |
+| `TAG-INFO <uid> PLAIN\|DESFIRE-CONFIGURED\|DESFIRE-NEW` | Tag identificato (auto-scan o modalità lettura) |
+| `TAG-ENROLLED <uid> DESFIRE` | Tag enrollato → Pi lo aggiunge alla whitelist |
+| `TAG-FORMAT-OK <uid>` | DESFire inizializzato — riavvicinare il tag |
 | `TAG-FORMAT-FAIL [NOT-DESFIRE\|NO-KEY]` | Errore inizializzazione |
-| `TAG-ENROLL-FAIL FULL\|AUTH\|ALREADY` | Errore aggiunta tag |
+| `TAG-ENROLL-FAIL [NOT-DESFIRE\|NO-KEY\|AUTH]` | Errore enroll (no DESFire / chiave assente / auth fallita) |
 | `KEY-STATUS EMPTY` | Chiave AES non generata |
 | `KEY-STATUS PRESENT FP:<hex8>` | Chiave presente, fingerprint SHA-256[:4] |
 | `KEY-GEN-OK FP:<hex8>` | Chiave generata |
@@ -599,7 +598,7 @@ sudo systemctl restart doorphoneserver
 ├── .env                            ← credenziali (600, non versionato)
 ├── mumble.pem                      ← certificato TLS Mumble
 ├── preferences/
-│   ├── nfc_whitelist.json          ← whitelist NFC (Pi-side cache)
+│   ├── nfc_whitelist.json          ← whitelist NFC (unica lista UID autorizzati)
 │   ├── floors.json                 ← occupanti piano P1/P2/P3
 │   └── key_state.json              ← fingerprint chiave AES + flag re_enroll_needed
 └── snapshots/                      ← foto dalla telecamera
@@ -777,44 +776,43 @@ La pagina **NFC Whitelist** del pannello (`http://<ip-pi>:8080/panel`, tab "NFC 
 ### Architettura di sicurezza — doppio livello
 
 ```
-Badge → ESP32-A (Livello 1: crittografico) → UID-OK → Pi (Livello 2: policy) → ESP32-B: relè
+Badge DESFire → ESP32-A (Livello 1: gate crittografico) → EVT nfc <UID> → Pi (Livello 2: gate autorizzazione) → ESP32-B: relè
 ```
 
-**Livello 1 — ESP32-A:**
-- Tag PLAIN: lettura UID
-- Tag DESFire EV3: autenticazione AES-128 a 3 passi
+Modello **crypto-only**: solo tessere DESFire (AES-128). L'ESP32-A **non tiene alcuna whitelist locale** — la lista degli UID autorizzati vive interamente sul Pi.
 
-**Livello 2 — Pi:**
+**Livello 1 — ESP32-A (gate crittografico):**
+- Autentica la tessera con la master key AES-128 (challenge-response a 3 passi)
+- Solo se l'auth riesce emette `EVT nfc <UID>`. Tag PLAIN, cloni UID e tessere di altri impianti falliscono l'auth e **non vengono mai riportati** al Pi
+
+**Livello 2 — Pi (gate autorizzazione):**
 - UID in whitelist JSON?
 - Tag non disabilitato?
 - Solo se entrambi → `SET unlockdoor pulse` a ESP32-B
 
 ### Aggiungere un tag — flusso auto-detect
 
-Il pannello chiede solo il nome del titolare. ESP32-A identifica autonomamente il tipo:
+Il pannello chiede solo il nome del titolare, poi invia `TAG-SCAN`. ESP32-A formatta/verifica la DESFire e riporta l'UID; il Pi salva l'associazione UID→nome nel proprio JSON. I tag non-DESFire vengono rifiutati (`TAG-ENROLL-FAIL NOT-DESFIRE`).
 
 | Tipo tag | Tap richiesti | Flusso |
 |---|---|---|
-| MIFARE Classic / NTAG | 1 | Nome → Attesa → Aggiunto |
 | DESFire già configurato | 1 | Nome → Attesa → Aggiunto |
-| DeSFire nuovo / vergine | 2 | Nome → Attesa → Formato → 2° tap → Aggiunto |
+| DESFire nuovo / vergine | 2 | Nome → Attesa → Formato → 2° tap → Aggiunto |
+
+### Leggi tessera (modalità diagnostica)
+
+Il pulsante **"Leggi tessera"** invia `TAG-INFO` e legge una tessera one-shot **senza aprire il portone**. Incrocia lo stato crittografico riportato dall'ESP32 (`DESFIRE-CONFIGURED` / `DESFIRE-NEW` / `PLAIN`) con la presenza in whitelist, dando un verdetto: operativa, valida ma non autorizzata, disabilitata, da inizializzare o non supportata. Utile per capire perché una tessera non apre o se è già registrata.
 
 ### Abilitare / Disabilitare
 
-**Disabilita** blocca l'accesso al Livello 2 (policy Pi) senza rimuovere il tag dall'ESP32. Utile per sospensioni temporanee.
-
-**Rimuovi** elimina il tag sia dal JSON del Pi che dalla NVS dell'ESP32.
-
-### Sync ESP32
-
-Verifica l'allineamento tra la whitelist JSON del Pi e la NVS dell'ESP32. Mostra tag presenti solo su uno dei due e permette di riallineare.
+**Disabilita** blocca l'accesso al Livello 2 (policy Pi) senza rimuovere il tag. Utile per sospensioni temporanee. **Rimuovi** elimina il tag dal JSON del Pi (unica lista esistente).
 
 ### Persistenza
 
 | Dove | File | Note |
 |---|---|---|
-| Pi | `preferences/nfc_whitelist.json` | Aggiornato ad ogni operazione |
-| ESP32-A | NVS flash (namespace `nfc_wl`) | Max 10 tag, sopravvive ai riavvii |
+| Pi | `preferences/nfc_whitelist.json` | **Unica** whitelist: UID → nome, tipo, abilitato, contatori |
+| ESP32-A | — | Nessuna whitelist locale (solo la master key AES in NVS) |
 
 ---
 
@@ -860,9 +858,9 @@ All'avvio del servizio (dopo 8s), il Pi esegue `EnsureKey()`:
 
 ### Cosa fare dopo una rigenerazione forzata
 
-1. Tutti i badge DeSFire esistenti diventano inutilizzabili
-2. Rimuovere ogni badge dalla whitelist e re-enrollarlo (viene rilevato come `DESFIRE-NEW` e reinizializzato)
-3. Cliccare "Ho re-enrollato tutte le tessere" nel banner per azzerare il flag
+1. Tutti i badge DESFire esistenti diventano inutilizzabili
+2. Re-enrollare ogni badge (viene rilevato come `DESFIRE-NEW` e reinizializzato con la nuova chiave)
+3. Cliccare "Ho ri-enrollato tutto" nel banner per azzerare il flag `re_enroll_needed` (è una **conferma manuale**: nulla lo azzera automaticamente, nemmeno un accesso riuscito o il riavvio)
 
 ### Sicurezza fisica
 

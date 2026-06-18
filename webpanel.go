@@ -165,7 +165,7 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/whitelist/enroll", b.handleWhitelistEnrollStart)
 	mux.HandleFunc("/api/whitelist/enroll/events", b.handleWhitelistEnrollEvents)
 	mux.HandleFunc("/api/whitelist/enroll/cancel", b.handleWhitelistEnrollCancel)
-	mux.HandleFunc("/api/whitelist/sync", b.handleWhitelistSync)
+	mux.HandleFunc("/api/whitelist/identify", b.handleWhitelistIdentifyStart)
 	mux.HandleFunc("/api/whitelist/clearall", b.handleWhitelistClearAll)
 	mux.HandleFunc("/api/whitelist/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
