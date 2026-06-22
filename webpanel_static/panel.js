@@ -2212,9 +2212,10 @@ function pollESP32(){
     const dot=document.getElementById('esp32Dot');
     const lbl=document.getElementById('esp32Status');
     if(dot&&lbl){
-      dot.style.background=d.connected?'#22c55e':'#ef4444';
-      lbl.style.color=d.connected?'#22c55e':'#ef4444';
-      lbl.textContent=d.connected?'Connesso':'Disconnesso';
+      const anyUp=d.connected||d.relay_connected;
+      dot.style.background=anyUp?'#22c55e':'#ef4444';
+      lbl.style.color=anyUp?'#22c55e':'#ef4444';
+      lbl.textContent=anyUp?'Connesso':'Disconnesso';
     }
     // mostra i log card solo se connesso
     const logDisplay=d.connected?'block':'none';
@@ -2224,9 +2225,12 @@ function pollESP32(){
     });
     // disabilita i controlli se non connesso
     const fan=document.getElementById('fanSlider');
-    const fanBtn=document.querySelector('button[onclick="esp32FanSet()"]');
     const door=document.getElementById('btnDoor');
-    [fan,fanBtn,door].forEach(el=>{if(el){el.disabled=!d.connected;el.style.opacity=d.connected?'1':'0.4';}});
+    // Ventola/Portone sono funzioni del bridge RELAY → gating su relay_connected
+    const relayUp=d.relay_connected;
+    [fan,door].forEach(el=>{if(el){el.disabled=!relayUp;el.style.opacity=relayUp?'1':'0.4';}});
+    // Occupanti piano + NFC Whitelist sono funzioni del bridge RFID → gating su connected
+    document.querySelectorAll('.rfid-gated').forEach(el=>{el.disabled=!d.connected;el.style.opacity=d.connected?'1':'0.4';});
     const pins=d.pins||{};
     const ringFlash=d.ring_flash||{};
     const now=Date.now();
@@ -2248,6 +2252,13 @@ function pollESP32(){
     if(slider&&fanVal&&parseInt(slider.value,10)!==fanPct){
       slider.value=fanPct;
       fanVal.textContent=fanPct+'%';
+    }
+    const lightPct=d.display_pct||0;
+    const lightSlider=document.getElementById('lightSlider');
+    const lightVal=document.getElementById('lightVal');
+    if(lightSlider&&lightVal&&parseInt(lightSlider.value,10)!==lightPct){
+      lightSlider.value=lightPct;
+      lightVal.textContent=lightPct+'%';
     }
     const usbLines=d.usb_log||[];
     const area=document.getElementById('esp32CardLog');
@@ -2275,6 +2286,16 @@ function esp32FanSet(){
   fetch('/panel/api/esp32/fan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'duty='+duty})
     .then(r=>r.json())
     .then(d=>toastCenter(d.ok?'Ventola impostata a '+duty+'%':(d.error||'Errore invio comando'),d.ok))
+    .catch(()=>toastCenter('Errore di rete',false));
+}
+
+function esp32LightSet(){
+  const slider=document.getElementById('lightSlider');
+  if(!slider)return;
+  const duty=parseInt(slider.value,10);
+  fetch('/panel/api/esp32/light',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'duty='+duty})
+    .then(r=>r.json())
+    .then(d=>toastCenter(d.ok?'Luminosità impostata a '+duty+'%':(d.error||'Errore invio comando'),d.ok))
     .catch(()=>toastCenter('Errore di rete',false));
 }
 

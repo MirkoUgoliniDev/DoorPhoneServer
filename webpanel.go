@@ -145,6 +145,7 @@ func (b *DoorPhoneServer) RegisterWebPanelRoutes(mux *http.ServeMux) {
 	// ESP32-S3 control endpoints
 	mux.HandleFunc("/panel/api/esp32/status", b.handleESP32Status)
 	mux.HandleFunc("/panel/api/esp32/fan", b.handleESP32Fan)
+	mux.HandleFunc("/panel/api/esp32/light", b.handleESP32Light)
 	mux.HandleFunc("/panel/api/esp32/door", b.handleESP32Door)
 	mux.HandleFunc("/panel/api/esp32/cardlog/clear", b.handleESP32CardLogClear)
 	mux.HandleFunc("/panel/api/esp32/usblog", b.handleESP32USBLog)
@@ -4106,6 +4107,7 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		RingFlash      map[string]int64 `json:"ring_flash"`
 		TabletOn       bool             `json:"tablet_on"`
 		FanPct         int              `json:"fan_pct"`
+		DisplayPct     int              `json:"display_pct"`
 		Floors         floorsJSON       `json:"floors"`
 	}
 
@@ -4120,6 +4122,7 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		resp.RfidPort = b.USBBridge.Path()
 		resp.USBLog = b.USBBridge.LogSnapshot()
 		resp.RingFlash = b.USBBridge.State.getRingFlash()
+		resp.DisplayPct = b.USBBridge.State.getLightPct()
 		f := b.USBBridge.State.getFloors()
 		resp.Floors = floorsJSON{P1: f[0], P2: f[1], P3: f[2]}
 	}
@@ -4154,6 +4157,30 @@ func (b *DoorPhoneServer) handleESP32Fan(w http.ResponseWriter, r *http.Request)
 	}
 	b.RelayBridge.Send("FAN-" + strconv.Itoa(duty) + "\n")
 	log.Printf("[PANEL] ESP32 FAN-%d", duty)
+	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+// handleESP32Light imposta la luminosità del display via PWM sull'ESP32-S3 RFID/ALL.
+// POST con campo "duty" (0-100). Restituisce errore se il bridge RFID non è connesso.
+func (b *DoorPhoneServer) handleESP32Light(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dutyStr := r.FormValue("duty")
+	duty, err := strconv.Atoi(dutyStr)
+	if err != nil || duty < 0 || duty > 100 {
+		http.Error(w, "duty deve essere 0-100", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if b.USBBridge == nil || !b.USBBridge.State.isConnected() {
+		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 RFID non connesso"}`)
+		return
+	}
+	b.USBBridge.Send("LIGHT-" + strconv.Itoa(duty) + "\n")
+	log.Printf("[PANEL] ESP32 LIGHT-%d", duty)
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 

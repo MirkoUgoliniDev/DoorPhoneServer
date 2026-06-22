@@ -53,6 +53,7 @@ type esp32State struct {
 	ringFlash  map[string]time.Time
 	tabletOn   bool
 	fanPct     int
+	lightPct   int          // luminosità display ESP32 RFID/ALL (0-100)
 	floors     [3][4]string // [piano 0-2][slot 0-3]
 }
 
@@ -167,6 +168,18 @@ func (s *esp32State) getFanPct() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.fanPct
+}
+
+func (s *esp32State) setLightPct(pct int) {
+	s.mu.Lock()
+	s.lightPct = pct
+	s.mu.Unlock()
+}
+
+func (s *esp32State) getLightPct() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lightPct
 }
 
 func (s *esp32State) setRingFlash(floor string) {
@@ -546,6 +559,10 @@ func (b *USBBridge) dispatch(line string) {
 				if pct, err := strconv.Atoi(strings.TrimPrefix(part, "FAN:")); err == nil {
 					b.State.setFanPct(pct)
 				}
+			} else if strings.HasPrefix(part, "LIGHT:") {
+				if pct, err := strconv.Atoi(strings.TrimPrefix(part, "LIGHT:")); err == nil {
+					b.State.setLightPct(pct)
+				}
 			} else if strings.HasPrefix(part, "TABLET:") {
 				on := strings.TrimPrefix(part, "TABLET:") == "ON"
 				b.State.setTablet(on)
@@ -560,6 +577,11 @@ func (b *USBBridge) dispatch(line string) {
 	case strings.HasPrefix(line, "ACK FAN-"):
 		if pct, err := strconv.Atoi(strings.TrimPrefix(line, "ACK FAN-")); err == nil {
 			b.State.setFanPct(pct)
+		}
+
+	case strings.HasPrefix(line, "ACK LIGHT-"):
+		if pct, err := strconv.Atoi(strings.TrimPrefix(line, "ACK LIGHT-")); err == nil {
+			b.State.setLightPct(pct)
 		}
 
 	case strings.HasPrefix(line, "ACK TAG-SCAN PENDING"):

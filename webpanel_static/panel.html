@@ -616,9 +616,9 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
   <input type="range" id="fanSlider" min="0" max="100" value="0"
     oninput="document.getElementById('fanVal').textContent=this.value+'%'"
+    onchange="esp32FanSet()"
     style="flex:1;accent-color:var(--accent)">
   <span id="fanVal" style="min-width:42px;font-size:16px;font-weight:700;color:var(--accent);text-align:right">0%</span>
-  <button class="btn-o btn-o-blue btn-sm" onclick="esp32FanSet()">Imposta</button>
 </div>
 
 <div style="display:flex;align-items:flex-start;gap:40px;flex-wrap:wrap">
@@ -664,31 +664,43 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 </div>
 
 <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border)">
+  <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Luminosità Display</h3>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <input type="range" id="lightSlider" min="0" max="100" value="0"
+      class="rfid-gated"
+      oninput="document.getElementById('lightVal').textContent=this.value+'%'"
+      onchange="esp32LightSet()"
+      style="flex:1;accent-color:var(--accent)">
+    <span id="lightVal" style="min-width:42px;font-size:16px;font-weight:700;color:var(--accent);text-align:right">0%</span>
+  </div>
+</div>
+
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border)">
   <h3 style="font-size:14px;font-weight:600;margin:0 0 20px;color:var(--fg)">Occupanti Piano</h3>
   <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start">
     <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
       <label style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.08em">PIANO 1</label>
-      <input id="floorP1-1" type="text" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP1-2" type="text" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP1-3" type="text" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP1-4" type="text" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <button onclick="esp32FloorSet('P1')" class="btn-o btn-o-blue btn-sm" style="margin-top:4px">Invia</button>
+      <input id="floorP1-1" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP1-2" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP1-3" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP1-4" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <button onclick="esp32FloorSet('P1')" class="btn-o btn-o-blue btn-sm rfid-gated" style="margin-top:4px">Invia</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
       <label style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.08em">PIANO 2</label>
-      <input id="floorP2-1" type="text" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP2-2" type="text" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP2-3" type="text" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP2-4" type="text" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <button onclick="esp32FloorSet('P2')" class="btn-o btn-o-blue btn-sm" style="margin-top:4px">Invia</button>
+      <input id="floorP2-1" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP2-2" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP2-3" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP2-4" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <button onclick="esp32FloorSet('P2')" class="btn-o btn-o-blue btn-sm rfid-gated" style="margin-top:4px">Invia</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
       <label style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.08em">PIANO 3</label>
-      <input id="floorP3-1" type="text" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP3-2" type="text" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP3-3" type="text" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <input id="floorP3-4" type="text" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
-      <button onclick="esp32FloorSet('P3')" class="btn-o btn-o-blue btn-sm" style="margin-top:4px">Invia</button>
+      <input id="floorP3-1" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 1" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP3-2" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 2" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP3-3" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 3" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <input id="floorP3-4" type="text" class="rfid-gated" maxlength="20" placeholder="Occupante 4" style="background:#0d1520;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--fg);outline:none;width:100%;box-sizing:border-box">
+      <button onclick="esp32FloorSet('P3')" class="btn-o btn-o-blue btn-sm rfid-gated" style="margin-top:4px">Invia</button>
     </div>
   </div>
 </div>
@@ -930,13 +942,13 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   </div>
   <h2><i class="bi bi-wifi"></i> NFC Whitelist</h2>
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-    <button class="btn-o btn-o-blue btn-sm" onclick="nfcStartAdd()" id="nfcAddBtn">
+    <button class="btn-o btn-o-blue btn-sm rfid-gated" onclick="nfcStartAdd()" id="nfcAddBtn">
       <i class="bi bi-plus-circle"></i> Aggiungi Tag
     </button>
-    <button class="btn-o btn-o-dim btn-sm" onclick="nfcReadTag()" id="nfcReadBtn">
+    <button class="btn-o btn-o-dim btn-sm rfid-gated" onclick="nfcReadTag()" id="nfcReadBtn">
       <i class="bi bi-search"></i> Leggi tessera
     </button>
-    <button class="btn-o btn-o-red btn-sm" onclick="nfcClearAll()">
+    <button class="btn-o btn-o-red btn-sm rfid-gated" onclick="nfcClearAll()">
       <i class="bi bi-trash3-fill"></i> Rimuovi tutti
     </button>
     <span style="margin-left:auto;font-size:13px;color:var(--dim)" id="nfcCount"></span>
@@ -992,11 +1004,11 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
     <div style="display:flex;flex-direction:column;gap:6px">
       <span style="font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.08em;text-transform:uppercase">Azioni</span>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="btnKeyGen" class="btn-o btn-o-blue btn-sm" onclick="esp32KeyGen(false)">
+        <button id="btnKeyGen" class="btn-o btn-o-blue btn-sm rfid-gated" onclick="esp32KeyGen(false)">
           <i class="bi bi-key-fill"></i> Genera chiave
         </button>
         <div style="display:flex;flex-direction:column;gap:4px">
-          <button id="btnKeyGenForce" class="btn-o btn-o-red btn-sm" onclick="esp32KeyGenForce()" style="display:none">
+          <button id="btnKeyGenForce" class="btn-o btn-o-red btn-sm rfid-gated" onclick="esp32KeyGenForce()" style="display:none">
             <i class="bi bi-arrow-repeat"></i> Rigenera (FORCE)
           </button>
           <span id="btnKeyGenForceHint" style="display:none;font-size:11px;color:#f97316;line-height:1.4">Sostituisce la chiave attuale — tutte le tessere DESFIRE dovranno essere ri-enrollate.</span>
