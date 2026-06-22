@@ -35,6 +35,10 @@ const (
 	// Tenuto basso perché HELLO arriva subito dopo GET-ROLE e il probe gira sotto
 	// discoveryMu, bloccando l'altro bridge per la durata della scansione.
 	usbProbeTimeout = 800 * time.Millisecond
+	// usbTopologyProbeWindow è la finestra entro cui, a startup, si cerca un device
+	// che risponda "HELLO ALL" per decidere la topologia (all-in-one vs split).
+	// Tenuta ampia per dare tempo all'enumerazione USB dopo il boot.
+	usbTopologyProbeWindow = 6 * time.Second
 )
 
 const cardLogMax = 50
@@ -250,7 +254,7 @@ type USBBridge struct {
 
 	// OnDoorUnlock è chiamato quando un EVT nfc <uid> di una tessera DESFire
 	// crittograficamente valida risulta autorizzato nella whitelist server.
-	// Permette di inviare "SET unlockdoor pulse" al bridge relay senza accoppiamento diretto.
+	// Permette di inviare "UNLOCK-DOOR" al bridge relay senza accoppiamento diretto.
 	OnDoorUnlock func()
 
 	path   string
@@ -270,7 +274,9 @@ type USBBridge struct {
 	pendingMap map[string]chan string
 }
 
-// NewUSBBridge crea il bridge per il ruolo indicato ("RFID" o "RELAY").
+// NewUSBBridge crea il bridge per il ruolo indicato ("RFID", "RELAY" o "ALL").
+// Il ruolo "ALL" indica un device all-in-one che serve entrambi i ruoli su una
+// sola seriale: in quel caso un unico bridge è condiviso tra RFID e relay.
 // La porta USB viene scoperta automaticamente tramite il protocollo GET-ROLE/HELLO.
 func NewUSBBridge(ctx context.Context, role string) *USBBridge {
 	state := newESP32State()
@@ -453,8 +459,9 @@ func (b *USBBridge) connectLoop(ctx context.Context) {
 		b.State.setConnected(true)
 		b.drainSendCh()
 		b.Send("GET-STATE\n")
-		// FLOOR-GET riguarda solo il display occupanti sull'ESP32 RFID.
-		if b.logTag == "RFID" {
+		// FLOOR-GET riguarda il display occupanti, presente sull'ESP32 RFID
+		// e sul device all-in-one (che integra anche la parte RFID).
+		if b.logTag == "RFID" || b.logTag == "ALL" {
 			b.Send("FLOOR-GET\n")
 		}
 		b.runSession(ctx, port)
@@ -583,6 +590,10 @@ func (b *USBBridge) dispatch(line string) {
 		if pct, err := strconv.Atoi(strings.TrimPrefix(line, "ACK LIGHT-")); err == nil {
 			b.State.setLightPct(pct)
 		}
+
+	case line == "ACK UNLOCK-DOOR":
+		// L'ACK arriva a fine impulso (~200ms): sblocca chi attende su SendAndWait.
+		b.signalPending("UNLOCK-DOOR", line)
 
 	case strings.HasPrefix(line, "ACK TAG-SCAN PENDING"):
 		b.signalPending("ACK-SCAN", "OK")

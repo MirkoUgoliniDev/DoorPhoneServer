@@ -78,6 +78,28 @@ func probeRole(path string, timeout time.Duration) (string, error) {
 	return "", fmt.Errorf("nessuna risposta HELLO da %s", path)
 }
 
+// detectAllInOne proba le porte candidate (senza riservarle) per una finestra
+// temporale e ritorna true se almeno un device risponde "HELLO ALL". Gira a
+// startup, prima che parta qualunque connectLoop: probeRole apre e chiude la
+// porta da solo e non marca nulla in uso, quindi non c'è race con i bridge.
+func detectAllInOne(window time.Duration) bool {
+	deadline := time.Now().Add(window)
+	for {
+		for _, path := range scanCandidatePorts() {
+			role, err := probeRole(path, usbProbeTimeout)
+			if err == nil && role == "ALL" {
+				return true
+			}
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		// Breve pausa prima del prossimo giro: dà tempo all'enumerazione USB
+		// di esporre il device se il boot non è ancora completo.
+		time.Sleep(usbRetryDelay)
+	}
+}
+
 // scanCandidatePorts ritorna i path /dev/ttyACM* e /dev/ttyUSB* disponibili, ordinati.
 func scanCandidatePorts() []string {
 	var ports []string

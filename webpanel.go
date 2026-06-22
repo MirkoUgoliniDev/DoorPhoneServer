@@ -4109,6 +4109,7 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		FanPct         int              `json:"fan_pct"`
 		DisplayPct     int              `json:"display_pct"`
 		Floors         floorsJSON       `json:"floors"`
+		Mode           string           `json:"mode"` // "all" oppure "split"
 	}
 
 	resp := statusResp{
@@ -4116,6 +4117,12 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		CardLog:   []ESP32CardLog{},
 		USBLog:    []string{},
 		RingFlash: make(map[string]int64),
+	}
+	// Topologia: in modalità all-in-one i due bridge sono lo stesso oggetto.
+	if b.USBBridge != nil && b.USBBridge == b.RelayBridge {
+		resp.Mode = "all"
+	} else {
+		resp.Mode = "split"
 	}
 	if b.USBBridge != nil {
 		resp.Connected, resp.Pins, resp.CardLog = b.USBBridge.State.snapshot()
@@ -4131,7 +4138,10 @@ func (b *DoorPhoneServer) handleESP32Status(w http.ResponseWriter, r *http.Reque
 		resp.RelayPort = b.RelayBridge.Path()
 		resp.TabletOn = b.RelayBridge.State.getTablet()
 		resp.FanPct = b.RelayBridge.State.getFanPct()
-		resp.USBLog = append(resp.USBLog, b.RelayBridge.LogSnapshot()...)
+		// In modalità all-in-one i due bridge coincidono: evita di duplicare lo USBLog.
+		if b.RelayBridge != b.USBBridge {
+			resp.USBLog = append(resp.USBLog, b.RelayBridge.LogSnapshot()...)
+		}
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -4335,8 +4345,14 @@ func (b *DoorPhoneServer) handleESP32Door(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, `{"ok":false,"error":"ESP32-S3 relay non connesso"}`)
 		return
 	}
-	b.RelayBridge.Send("SET unlockdoor pulse\n")
-	log.Printf("[PANEL] ESP32 unlockdoor pulse inviato")
+	// Attende l'ACK dell'ESP: per UNLOCK-DOOR arriva a fine impulso (~200ms),
+	// quindi timeout 500ms. Toast "Portone aperto" solo se l'apertura è confermata.
+	if _, ok := b.RelayBridge.SendAndWait("UNLOCK-DOOR\n", "UNLOCK-DOOR", 500*time.Millisecond); !ok {
+		log.Printf("[PANEL] ESP32 UNLOCK-DOOR: nessun ACK")
+		fmt.Fprintf(w, `{"ok":false,"error":"Nessuna conferma dall'ESP"}`)
+		return
+	}
+	log.Printf("[PANEL] ESP32 UNLOCK-DOOR confermato")
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 

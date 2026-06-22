@@ -608,12 +608,12 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
 <div class="card">
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
   <h2 style="margin:0"><i class="bi bi-cpu"></i> ESP32-S3</h2>
-  <span id="esp32Dot" style="width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block;flex-shrink:0"></span>
-  <span id="esp32Status" style="font-size:14px;font-weight:600;color:var(--dim)">Disconnesso</span>
+  <span id="esp32StatusBar" style="display:flex;align-items:center;gap:16px"></span>
 </div>
 
+<!-- Ventola PWM -->
 <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Ventola PWM</h3>
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
   <input type="range" id="fanSlider" min="0" max="100" value="0"
     oninput="document.getElementById('fanVal').textContent=this.value+'%'"
     onchange="esp32FanSet()"
@@ -621,13 +621,30 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
   <span id="fanVal" style="min-width:42px;font-size:16px;font-weight:700;color:var(--accent);text-align:right">0%</span>
 </div>
 
-<div style="display:flex;align-items:flex-start;gap:40px;flex-wrap:wrap">
+<!-- Luminosità Display -->
+<h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Luminosità Display</h3>
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+  <input type="range" id="lightSlider" min="0" max="100" value="0"
+    class="rfid-gated"
+    oninput="document.getElementById('lightVal').textContent=this.value+'%'"
+    onchange="esp32LightSet()"
+    style="flex:1;accent-color:var(--accent)">
+  <span id="lightVal" style="min-width:42px;font-size:16px;font-weight:700;color:var(--accent);text-align:right">0%</span>
+</div>
+
+<!-- Portone + Tablet -->
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:40px;flex-wrap:wrap">
   <!-- Portone -->
   <div>
     <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Portone</h3>
-    <button class="btn-relief btn-relief-red" id="btnDoor" onclick="esp32Door()">
-      <i class="bi bi-door-open"></i> Apri Portone
-    </button>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div id="doorToggleTrack" onclick="esp32Door()"
+        style="width:44px;height:24px;border-radius:12px;background:var(--dim);position:relative;transition:background .25s;cursor:pointer;flex-shrink:0">
+        <div id="doorToggleThumb"
+          style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .25s;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>
+      </div>
+      <span id="doorToggleLabel" style="font-size:13px;color:var(--dim)">Apri Portone</span>
+    </div>
   </div>
 
   <!-- Tablet -->
@@ -642,36 +659,24 @@ Drop files here or click to browse<br><small>Max 10MB — .wav o .mp3</small>
       <span id="tabletToggleLabel" style="font-size:13px;color:var(--dim)">Spento</span>
     </div>
   </div>
-
-  <!-- Pulsanti Piano -->
-  <div>
-    <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Pulsanti Piano</h3>
-    <div style="display:flex;gap:28px">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-        <div id="ledP1" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P1"></div>
-        <span style="font-size:12px;color:var(--dim)">P1</span>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-        <div id="ledP2" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P2"></div>
-        <span style="font-size:12px;color:var(--dim)">P2</span>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-        <div id="ledP3" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P3"></div>
-        <span style="font-size:12px;color:var(--dim)">P3</span>
-      </div>
-    </div>
-  </div>
 </div>
 
-<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border)">
-  <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Luminosità Display</h3>
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-    <input type="range" id="lightSlider" min="0" max="100" value="0"
-      class="rfid-gated"
-      oninput="document.getElementById('lightVal').textContent=this.value+'%'"
-      onchange="esp32LightSet()"
-      style="flex:1;accent-color:var(--accent)">
-    <span id="lightVal" style="min-width:42px;font-size:16px;font-weight:700;color:var(--accent);text-align:right">0%</span>
+<!-- Pulsanti Piano -->
+<div style="margin-top:24px">
+  <h3 style="font-size:14px;font-weight:600;margin:0 0 10px">Pulsanti Piano</h3>
+  <div style="display:flex;gap:28px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div id="ledP1" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P1"></div>
+      <span style="font-size:12px;color:var(--dim)">P1</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div id="ledP2" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P2"></div>
+      <span style="font-size:12px;color:var(--dim)">P2</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div id="ledP3" style="width:22px;height:22px;border-radius:50%;background:var(--dim);transition:background .4s;box-shadow:none" title="P3"></div>
+      <span style="font-size:12px;color:var(--dim)">P3</span>
+    </div>
   </div>
 </div>
 

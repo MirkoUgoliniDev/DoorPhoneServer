@@ -66,8 +66,15 @@ func (g *GPIOUsb) bridgeFor(name string) *USBBridge {
 	return g.rfid
 }
 
-// SetPin invia un comando SET al bridge corretto per quel pin (on / off / pulse).
+// SetPin invia il comando al bridge corretto per quel pin (on / off / pulse).
+// I pin sul relay bridge usano il protocollo a token fissi del firmware
+// role-based (es. UNLOCK-DOOR); gli altri pin usano la sintassi generica
+// SET <pin> <stato>.
 func (g *GPIOUsb) SetPin(name, state string) {
+	if name == "unlockdoor" && state == "pulse" {
+		g.relay.Send("UNLOCK-DOOR\n")
+		return
+	}
 	g.bridgeFor(name).Send("SET " + name + " " + state + "\n")
 }
 
@@ -78,6 +85,10 @@ func (g *GPIOUsb) SetPWM(name string, duty int) {
 	}
 	if duty > 100 {
 		duty = 100
+	}
+	if name == "fan" {
+		g.relay.Send("FAN-" + itoa(duty) + "\n")
+		return
 	}
 	g.relay.Send("PWM " + name + " " + itoa(duty) + "\n")
 }

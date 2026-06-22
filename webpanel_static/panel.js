@@ -2209,13 +2209,20 @@ function stopESP32Poll(){
 
 function pollESP32(){
   fetch('/panel/api/esp32/status').then(r=>r.json()).then(d=>{
-    const dot=document.getElementById('esp32Dot');
-    const lbl=document.getElementById('esp32Status');
-    if(dot&&lbl){
-      const anyUp=d.connected||d.relay_connected;
-      dot.style.background=anyUp?'#22c55e':'#ef4444';
-      lbl.style.color=anyUp?'#22c55e':'#ef4444';
-      lbl.textContent=anyUp?'Connesso':'Disconnesso';
+    const statusBar=document.getElementById('esp32StatusBar');
+    if(statusBar){
+      function indicator(label,up){
+        const color=up?'#22c55e':'#ef4444';
+        return '<span style="display:flex;align-items:center;gap:8px">'
+          +'<span style="width:12px;height:12px;border-radius:50%;background:'+color+';display:inline-block;flex-shrink:0"></span>'
+          +'<span style="font-size:14px;font-weight:600;color:'+color+'">'+label+': '+(up?'Connesso':'Disconnesso')+'</span>'
+          +'</span>';
+      }
+      if(d.mode==='all'){
+        statusBar.innerHTML=indicator('All-in-One',d.connected);
+      } else {
+        statusBar.innerHTML=indicator('RFID/Display',d.connected)+indicator('Relay',d.relay_connected);
+      }
     }
     // mostra i log card solo se connesso
     const logDisplay=d.connected?'block':'none';
@@ -2225,10 +2232,13 @@ function pollESP32(){
     });
     // disabilita i controlli se non connesso
     const fan=document.getElementById('fanSlider');
-    const door=document.getElementById('btnDoor');
-    // Ventola/Portone sono funzioni del bridge RELAY → gating su relay_connected
+    const doorTrack=document.getElementById('doorToggleTrack');
+    const tabletTrack=document.getElementById('tabletToggleTrack');
+    // Ventola/Portone/Tablet sono funzioni del bridge RELAY → gating su relay_connected
     const relayUp=d.relay_connected;
-    [fan,door].forEach(el=>{if(el){el.disabled=!relayUp;el.style.opacity=relayUp?'1':'0.4';}});
+    if(fan){fan.disabled=!relayUp;fan.style.opacity=relayUp?'1':'0.4';}
+    if(doorTrack){doorTrack.style.pointerEvents=relayUp?'auto':'none';doorTrack.style.opacity=relayUp?'1':'0.4';}
+    if(tabletTrack){tabletTrack.style.pointerEvents=relayUp?'auto':'none';tabletTrack.style.opacity=relayUp?'1':'0.4';}
     // Occupanti piano + NFC Whitelist sono funzioni del bridge RFID → gating su connected
     document.querySelectorAll('.rfid-gated').forEach(el=>{el.disabled=!d.connected;el.style.opacity=d.connected?'1':'0.4';});
     const pins=d.pins||{};
@@ -2312,7 +2322,7 @@ function setTabletSwitch(on){
 
 function esp32TabletToggle(){
   const track=document.getElementById('tabletToggleTrack');
-  if(!track)return;
+  if(!track||track.style.pointerEvents==='none')return; // gated quando RELAY non connesso
   const currentlyOn=track.style.background==='rgb(34, 197, 94)';
   const newState=currentlyOn?'off':'on';
   fetch('/panel/api/esp32/tablet',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'state='+newState})
@@ -2352,19 +2362,27 @@ function esp32FloorSet(floor){
 }
 
 function esp32Door(){
-  const btn=document.getElementById('btnDoor');
-  if(!btn||btn.disabled)return;
-  // effetto fisico: premi giù, tieni 180ms, rilascia
-  btn.classList.add('pressing');
-  btn.disabled=true;
-  setTimeout(()=>{
-    btn.classList.remove('pressing');
-    setTimeout(()=>{btn.disabled=false;},600);
-  },180);
+  const track=document.getElementById('doorToggleTrack');
+  const thumb=document.getElementById('doorToggleThumb');
+  const lbl=document.getElementById('doorToggleLabel');
+  if(!track||track.style.pointerEvents==='none')return; // gated quando RELAY non connesso
+  // interruttore momentaneo: scatta ON → invia impulso → torna OFF
+  track.style.background='#ef4444';
+  if(thumb)thumb.style.left='22px';
+  if(lbl){lbl.textContent='Apertura…';lbl.style.color='#ef4444';}
+  track.style.pointerEvents='none';
   fetch('/panel/api/esp32/door',{method:'POST'})
     .then(r=>r.json())
     .then(d=>toastCenter(d.ok?'Portone aperto':(d.error||'Errore invio comando'),d.ok))
-    .catch(()=>toastCenter('Errore di rete',false));
+    .catch(()=>toastCenter('Errore di rete',false))
+    .finally(()=>{
+      // il backend risponde solo dopo l'ACK UNLOCK-DOOR (~200ms) o il timeout:
+      // riportiamo il toggle a riposo a conferma ricevuta.
+      track.style.background='var(--dim)';
+      if(thumb)thumb.style.left='2px';
+      if(lbl){lbl.textContent='Apri Portone';lbl.style.color='var(--dim)';}
+      track.style.pointerEvents='auto';
+    });
 }
 
 function updateKeyUI(d){

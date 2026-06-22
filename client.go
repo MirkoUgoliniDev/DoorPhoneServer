@@ -163,27 +163,39 @@ func Init(file string, ServerIndex string) {
 	b.NFCWhitelist = NewNFCWhitelistManager()
 
 	if ioUseESP32() {
-		bridgeRFID  := NewUSBBridge(ctx, "RFID")
-		bridgeRelay := NewUSBBridge(ctx, "RELAY")
-		b.USBBridge  = bridgeRFID
-		b.RelayBridge = bridgeRelay
+		// Rilevazione topologia: se è presente un device all-in-one ("HELLO ALL")
+		// si usa UN SOLO bridge condiviso (due read-loop sulla stessa seriale non
+		// possono coesistere); altrimenti due bridge separati RFID + RELAY.
+		var rfidBridge, relayBridge *USBBridge
+		if detectAllInOne(usbTopologyProbeWindow) {
+			shared := NewUSBBridge(ctx, "ALL") // avvia UN solo connectLoop
+			rfidBridge, relayBridge = shared, shared
+			log.Printf("[USB] topologia ALL-IN-ONE: bridge unico condiviso")
+		} else {
+			rfidBridge = NewUSBBridge(ctx, "RFID")
+			relayBridge = NewUSBBridge(ctx, "RELAY")
+			log.Printf("[USB] topologia split: bridge RFID + RELAY")
+		}
+		b.USBBridge = rfidBridge
+		b.RelayBridge = relayBridge
 
 		// Quando il tag RFID è approvato dalla whitelist, apre il portone sul bridge relay.
-		bridgeRFID.OnDoorUnlock = func() {
-			bridgeRelay.Send("SET unlockdoor pulse\n")
+		// In modalità ALL i due bridge coincidono: il comando va a sé stesso (corretto).
+		rfidBridge.OnDoorUnlock = func() {
+			relayBridge.Send("UNLOCK-DOOR\n")
 		}
 
-		ioUSB = NewGPIOUsb(bridgeRFID, bridgeRelay, &b)
+		ioUSB = NewGPIOUsb(rfidBridge, relayBridge, &b)
 		go ioUSB.Run(ctx)
-		go NewSmartcard(bridgeRFID).Run(ctx)
-		bridgeRFID.SetNFCManager(b.NFCWhitelist)
+		go NewSmartcard(rfidBridge).Run(ctx)
+		rfidBridge.SetNFCManager(b.NFCWhitelist)
 
 		// Modello crypto-only: la whitelist vive solo sul server, niente più sync
 		// NVS ↔ JSON. All'avvio si attende la connessione USB e si riconcilia solo
 		// la chiave AES DESFire (EnsureKey).
 		go func() {
 			time.Sleep(8 * time.Second)
-			fp, err := bridgeRFID.EnsureKey()
+			fp, err := rfidBridge.EnsureKey()
 			if err != nil {
 				log.Printf("[NFC] EnsureKey fallita: %v", err)
 				return
