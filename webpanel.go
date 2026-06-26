@@ -2119,6 +2119,7 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 		ScreenBrightnessLevel int          `json:"screenbrightnesslevel"`
 		Timezone      string       `json:"timezone"`
 		ServerTime    int64        `json:"server_time"`
+		SettingsPassword string    `json:"settings_password"`
 		Mumble        MumbleConfig `json:"mumbleserver"`
 		Doorpi        DoorpiConfig `json:"doorpi"`
 		Apk           ApkConfig    `json:"apk"`
@@ -2142,6 +2143,7 @@ func (b *DoorPhoneServer) handleAppConfig(w http.ResponseWriter, r *http.Request
 			return tz
 		}(),
 		ServerTime:    now.Unix(),
+		SettingsPassword: readDotEnvKey("SETTING_PASSWORD"),
 		Mumble:        mumbleCfg,
 		Doorpi: DoorpiConfig{
 			Host:          reqHost,

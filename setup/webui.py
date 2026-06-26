@@ -442,6 +442,18 @@ HTML = r"""<!DOCTYPE html>
           </div>
         </div>
         <hr style="border-color:#313244;margin-bottom:.75rem">
+        <!-- Pannello impostazioni -->
+        <div class="flex flex-col gap-2 mb-3">
+          <span class="text-xs font-bold" style="color:var(--accent)">PANNELLO IMPOSTAZIONI</span>
+          <div>
+            <label class="block text-xs font-semibold mb-1" style="color:var(--muted)">Password impostazioni</label>
+            <div style="position:relative;width:100%">
+              <input type="password" id="env_setting_password" placeholder="password accesso impostazioni tablet">
+              <button type="button" onclick="togglePwd('env_setting_password')" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);color:var(--muted)">👁</button>
+            </div>
+          </div>
+        </div>
+        <hr style="border-color:#313244;margin-bottom:.75rem">
         <!-- OpenRouter -->
         <div class="flex flex-col gap-2 mb-3">
           <span class="text-xs font-bold" style="color:var(--accent)">OPENROUTER</span>
@@ -1281,6 +1293,7 @@ function getEnvFields() {
     env_camera_password: document.getElementById('env_camera_password').value,
     env_pushover_token:  document.getElementById('env_pushover_token').value,
     env_pushover_key:    document.getElementById('env_pushover_key').value,
+    env_setting_password: document.getElementById('env_setting_password').value,
     env_openrouter_key:  document.getElementById('env_openrouter_key').value,
   };
 }
@@ -1848,6 +1861,7 @@ def save_env():
         f"CAMERA_PASSWORD={data.get('env_camera_password','')}\n"
         f"PUSHOVER_API_TOKEN={data.get('env_pushover_token','')}\n"
         f"PUSHOVER_USER_KEY={data.get('env_pushover_key','')}\n"
+        f"SETTING_PASSWORD={data.get('env_setting_password','')}\n"
         f"OPENROUTER_API_KEY={data.get('env_openrouter_key','')}\n"
     )
     env_path = Path(f"/home/{TK_USER}/.env")
@@ -1900,6 +1914,7 @@ def start():
             "env_camera_password": data.get("env_camera_password", ""),
             "env_pushover_token":  data.get("env_pushover_token", ""),
             "env_pushover_key":    data.get("env_pushover_key", ""),
+            "env_setting_password": data.get("env_setting_password", ""),
             "env_openrouter_key":  data.get("env_openrouter_key", ""),
         }
     except Exception as e:

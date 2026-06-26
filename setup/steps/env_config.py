@@ -27,6 +27,7 @@ class StepEnvConfig(Step):
             f"CAMERA_PASSWORD={config.get('env_camera_password', '')}\n"
             f"PUSHOVER_API_TOKEN={config.get('env_pushover_token', '')}\n"
             f"PUSHOVER_USER_KEY={config.get('env_pushover_key', '')}\n"
+            f"SETTING_PASSWORD={config.get('env_setting_password', '')}\n"
             f"OPENROUTER_API_KEY={config.get('env_openrouter_key', '')}\n"
         )
 
