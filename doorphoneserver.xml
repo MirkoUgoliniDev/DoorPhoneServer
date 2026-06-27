@@ -98,7 +98,7 @@
     <p1 kioskmode="true" hide_status_bar="true" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p1>
     <p2 kioskmode="true" hide_status_bar="true"  miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p2>
     <p3 kioskmode="true" hide_status_bar="true" miclevel="100" speakerlevel="100" screenbrightnesslevel="100"></p3>
-    <p4 kioskmode="false" hide_status_bar="false" miclevel="140" speakerlevel="1" screenbrightnesslevel="100"></p4>
+    <p4 kioskmode="true" hide_status_bar="true" miclevel="140" speakerlevel="50" screenbrightnesslevel="100"></p4>
     </tablet>
 
 		</software>
