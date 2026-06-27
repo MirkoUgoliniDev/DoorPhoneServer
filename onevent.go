@@ -82,9 +82,13 @@ func (b *DoorPhoneServer) OnConnect(e *gumble.ConnectEvent) {
 		prevChannelID = b.Client.Self.Channel.ID
 	}
 
-	// Registra il timestamp per tutti gli utenti già presenti al momento della connessione
+	// Registra il timestamp per tutti gli utenti già presenti al momento della connessione.
+	// SetUserConnected è un fallback immediato (ora corrente); RequestStats chiede al server
+	// le statistiche reali (Onlinesecs): la risposta async arriva come UserChangeStats e
+	// corregge l'orario con quello effettivo di ingresso dell'utente sul server.
 	for _, usr := range b.Client.Users {
 		SetUserConnected(usr.Session)
+		usr.RequestStats()
 	}
 
 	log.Printf("debug: ------- IsConnected: %v   -------- \n ", IsConnected.Load())
@@ -109,6 +113,11 @@ func (b *DoorPhoneServer) OnDisconnect(e *gumble.DisconnectEvent) {
 	}
 
 	IsConnected.Store(false)
+
+	// Connessione persa: tutte le sessioni correnti sono ormai invalide e gumble non
+	// emette UserChangeDisconnected per ciascuna. Svuota la mappa per evitare il leak
+	// e i timestamp fantasma dopo la riconnessione (i session id vengono riassegnati).
+	ClearUserConnectLog()
 
 	// Calculate uptime before disconnect
 	var uptime time.Duration
@@ -336,11 +345,22 @@ func (b *DoorPhoneServer) OnUserChange(e *gumble.UserChangeEvent) {
 		}
 	}
 
-	// Track connection/disconnection timestamps
-	switch e.Type {
-	case gumble.UserChangeConnected:
+	// Track connection/disconnection timestamps.
+	// Nota: e.Type è un bitmask, quindi si usa Has() (un evento Stats può arrivare
+	// combinato con altri flag).
+	if e.Type.Has(gumble.UserChangeConnected) {
 		SetUserConnected(e.User.Session)
-	case gumble.UserChangeDisconnected, gumble.UserChangeKicked, gumble.UserChangeBanned:
+		// Chiedi le stats per ottenere l'orario reale (utile se l'utente era già
+		// presente o in caso di clock skew); la risposta arriva come UserChangeStats.
+		e.User.RequestStats()
+	}
+	if e.Type.Has(gumble.UserChangeStats) && e.User.Stats != nil {
+		// Stats.Connected = now - Onlinesecs → orario reale di ingresso sul server.
+		SetUserConnectedAt(e.User.Session, e.User.Stats.Connected)
+	}
+	if e.Type.Has(gumble.UserChangeDisconnected) ||
+		e.Type.Has(gumble.UserChangeKicked) ||
+		e.Type.Has(gumble.UserChangeBanned) {
 		RemoveUserConnected(e.User.Session)
 	}
 

@@ -14,11 +14,26 @@ var (
 	userConnectMutex sync.RWMutex
 )
 
-// SetUserConnected records when a user session connected.
+// SetUserConnected records the current time as the connection time for a
+// session. Used as an immediate fallback until the real server-side time
+// (Stats.Connected) is available via SetUserConnectedAt.
 func SetUserConnected(session uint32) {
 	userConnectMutex.Lock()
 	defer userConnectMutex.Unlock()
 	userConnectLog[session] = time.Now()
+}
+
+// SetUserConnectedAt records an explicit connection time for a session, e.g.
+// the real server-side connect time computed from the user's stats
+// (now - Onlinesecs). This corrects the fallback set by SetUserConnected for
+// users already present at the moment the bridge (re)connects.
+func SetUserConnectedAt(session uint32, t time.Time) {
+	if t.IsZero() {
+		return
+	}
+	userConnectMutex.Lock()
+	defer userConnectMutex.Unlock()
+	userConnectLog[session] = t
 }
 
 // RemoveUserConnected removes the connection record for a session.
@@ -26,6 +41,17 @@ func RemoveUserConnected(session uint32) {
 	userConnectMutex.Lock()
 	defer userConnectMutex.Unlock()
 	delete(userConnectLog, session)
+}
+
+// ClearUserConnectLog drops all connection records. Must be called when the
+// connection to the Mumble server is lost: gumble does not emit a per-user
+// UserChangeDisconnected on a full disconnect, so without this the map would
+// retain stale sessions forever (memory leak) and report phantom timestamps
+// after a reconnect (session ids are reassigned).
+func ClearUserConnectLog() {
+	userConnectMutex.Lock()
+	defer userConnectMutex.Unlock()
+	userConnectLog = map[uint32]time.Time{}
 }
 
 // GetUserConnectedAt returns the connection time for a session, or zero time if not found.

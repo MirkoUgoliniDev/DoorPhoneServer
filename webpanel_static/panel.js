@@ -1155,14 +1155,21 @@ function confirmModal(title,body,iconType,btnType,btnLabel){
 }
 
 // --- Mumble Users ---
+// Escape per output HTML: i nomi utente arrivano dal server Mumble e non sono
+// fidati (un nick come <img src=x onerror=...> sarebbe XSS nel pannello).
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>(
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
 function deviceLabelFromName(name){
-  // Estrae label device da username: PIANO1→P1, PIANO2→P2, Doorpi→DP, ecc.
+  // Estrae label device da username: PIANO1→P1, PIANO2→P2, "Doorpi"→DO (parola singola), ecc.
   const m=name.match(/^([A-Za-z]+?)(\d+)$/);
   if(m){
     // Prima lettera maiuscola della parte testuale + numero
     return m[1].charAt(0).toUpperCase()+m[2];
   }
-  // Nessun numero: iniziali (es. Doorpi→DP, doorphoneserver→D)
+  // Nessun numero: iniziali se più parole (es. "Door Pi"→DP), altrimenti prime 2 lettere
   const words=name.trim().split(/\s+/);
   if(words.length>=2) return words.map(w=>w.charAt(0).toUpperCase()).join('');
   return name.substring(0,2).toUpperCase();
@@ -1197,8 +1204,13 @@ function loadMumbleUsers(){
         if(u.priority_speaker)badges.push('<span style="background:#a855f7;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px">Priority</span>');
         if(u.recording)badges.push('<span style="background:#ec4899;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px">REC</span>');
         const isSelf=u.is_self;
-        const devLabel=deviceLabelFromName(u.name);
-        const connAt=u.connected_at||'—';
+        const devLabel=deviceLabelFromName(u.name||'');
+        const connAt=escapeHtml(u.connected_at||'—');
+        // Nessun flag audio attivo = utente sano: mostralo esplicitamente in verde
+        // invece di un trattino (che si legge come "dato mancante").
+        const statoCell=badges.length
+          ? badges.join(' ')
+          : '<span style="color:#22c55e;font-size:13px"><i class="bi bi-check-circle-fill"></i> Attivo</span>';
         // Ring button: map device label to ring&PN query param
         const ringCmdMap={'P1':'ring&P1','P2':'ring&P2','P3':'ring&P3','P4':'ring&P4'};
         const ringCmd=ringCmdMap[devLabel];
@@ -1210,8 +1222,8 @@ function loadMumbleUsers(){
           : '<span style="color:var(--dim)">—</span>';
         return `<tr style="border-bottom:1px solid var(--border);${isSelf?'background:rgba(56,189,248,0.06)':''}"
           title="${isSelf?'Questo dispositivo':''}"> 
-          <td style="padding:6px 10px;font-weight:${isSelf?'700':'400'};color:${isSelf?'var(--accent)':'var(--text)'}">${u.name}${isSelf?' ★':''}</td>
-          <td style="padding:6px 10px">${badges.length?badges.join(' '):'<span style="color:var(--dim)">—</span>'}</td>
+          <td style="padding:6px 10px;font-weight:${isSelf?'700':'400'};color:${isSelf?'var(--accent)':'var(--text)'}">${escapeHtml(u.name)}${isSelf?' ★':''}</td>
+          <td style="padding:6px 10px">${statoCell}</td>
           <td style="padding:6px 10px;font-family:monospace;font-size:12px;color:var(--dim)">${connAt}</td>
           <td style="padding:6px 10px">${ringBtn}</td>
         </tr>`;
@@ -1235,8 +1247,7 @@ function ringDevice(cmd){
       .catch(()=>toastCenter('Errore connessione',false));
   });
 }
-let _usersRefreshTimer=null;
-setInterval(()=>{
+let _usersRefreshTimer=setInterval(()=>{
   if(document.getElementById('usersAutoRefresh')&&document.getElementById('usersAutoRefresh').checked){
     const activePage=document.querySelector('.page.active');
     if(activePage&&activePage.id==='page-users')loadMumbleUsers();

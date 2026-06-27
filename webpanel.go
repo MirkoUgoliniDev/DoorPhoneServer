@@ -1663,39 +1663,52 @@ func (b *DoorPhoneServer) handleMumbleUsers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// b.Client.Users è una mappa mutata dalla goroutine di rete di gumble. Iterarla
+	// dalla goroutine HTTP senza sincronizzazione è una data race che può causare un
+	// "concurrent map iteration and map write" (panic = crash del processo). Client.Do
+	// acquisisce il lock condiviso di gumble per una lettura sicura. La serializzazione
+	// JSON (I/O di rete) resta FUORI dal Do per non bloccare l'event loop di gumble.
 	users := []UserInfo{}
-	for _, usr := range b.Client.Users {
-		chName := ""
-		if usr.Channel != nil {
-			chName = usr.Channel.Name
+	b.Client.Do(func() {
+		self := b.Client.Self
+		for _, usr := range b.Client.Users {
+			chName := ""
+			if usr.Channel != nil {
+				chName = usr.Channel.Name
+			}
+			isSelf := self != nil && usr.Session == self.Session
+			// Preferisci l'orario reale dal server (Stats.Connected, = now - Onlinesecs);
+			// in attesa della risposta stats usa il fallback locale registrato in OnConnect.
+			connAt := GetUserConnectedAt(usr.Session)
+			if usr.Stats != nil && !usr.Stats.Connected.IsZero() {
+				connAt = usr.Stats.Connected
+			}
+			connAtStr := ""
+			if !connAt.IsZero() {
+				connAtStr = connAt.Format("15:04:05")
+			}
+			// Mumble protocol invariant: SelfDeafened implies SelfMuted.
+			// Murmur sometimes omits SelfMute in the initial UserState when only SelfDeaf is set.
+			selfMuted := usr.SelfMuted || usr.SelfDeafened
+			users = append(users, UserInfo{
+				Name:            usr.Name,
+				Session:         usr.Session,
+				Channel:         chName,
+				Muted:           usr.Muted,
+				Deafened:        usr.Deafened,
+				SelfMuted:       selfMuted,
+				SelfDeafened:    usr.SelfDeafened,
+				Suppressed:      usr.Suppressed,
+				PrioritySpeaker: usr.PrioritySpeaker,
+				Recording:       usr.Recording,
+				Comment:         usr.Comment,
+				Hash:            usr.Hash,
+				Registered:      usr.UserID != 0,
+				IsSelf:          isSelf,
+				ConnectedAt:     connAtStr,
+			})
 		}
-		isSelf := b.Client.Self != nil && usr.Session == b.Client.Self.Session
-		connAt := GetUserConnectedAt(usr.Session)
-		connAtStr := ""
-		if !connAt.IsZero() {
-			connAtStr = connAt.Format("15:04:05")
-		}
-		// Mumble protocol invariant: SelfDeafened implies SelfMuted.
-		// Murmur sometimes omits SelfMute in the initial UserState when only SelfDeaf is set.
-		selfMuted := usr.SelfMuted || usr.SelfDeafened
-		users = append(users, UserInfo{
-			Name:            usr.Name,
-			Session:         usr.Session,
-			Channel:         chName,
-			Muted:           usr.Muted,
-			Deafened:        usr.Deafened,
-			SelfMuted:       selfMuted,
-			SelfDeafened:    usr.SelfDeafened,
-			Suppressed:      usr.Suppressed,
-			PrioritySpeaker: usr.PrioritySpeaker,
-			Recording:       usr.Recording,
-			Comment:         usr.Comment,
-			Hash:            usr.Hash,
-			Registered:      usr.UserID != 0,
-			IsSelf:          isSelf,
-			ConnectedAt:     connAtStr,
-		})
-	}
+	})
 	if err := json.NewEncoder(w).Encode(users); err != nil {
 		log.Printf("error: encode users: %v", err)
 	}
