@@ -30,6 +30,51 @@ func cleanstring(str string) string {
 	return sanitize.Name(str)
 }
 
+// asciiTranslit mappa i caratteri Latin-1/accentati più comuni al loro
+// equivalente ASCII. Il display della scheda RFID non rende gli accentati,
+// quindi p.es. "Niccolò" → "Niccolo".
+var asciiTranslit = map[rune]string{
+	'à': "a", 'á': "a", 'â': "a", 'ä': "a", 'ã': "a", 'å': "a", 'À': "A", 'Á': "A", 'Â': "A", 'Ä': "A", 'Ã': "A", 'Å': "A",
+	'è': "e", 'é': "e", 'ê': "e", 'ë': "e", 'È': "E", 'É': "E", 'Ê': "E", 'Ë': "E",
+	'ì': "i", 'í': "i", 'î': "i", 'ï': "i", 'Ì': "I", 'Í': "I", 'Î': "I", 'Ï': "I",
+	'ò': "o", 'ó': "o", 'ô': "o", 'ö': "o", 'õ': "o", 'ø': "o", 'Ò': "O", 'Ó': "O", 'Ô': "O", 'Ö': "O", 'Õ': "O", 'Ø': "O",
+	'ù': "u", 'ú': "u", 'û': "u", 'ü': "u", 'Ù': "U", 'Ú': "U", 'Û': "U", 'Ü': "U",
+	'ç': "c", 'Ç': "C", 'ñ': "n", 'Ñ': "N", 'ý': "y", 'ÿ': "y", 'Ý': "Y", 'ß': "ss",
+}
+
+// asciiTruncate traslittera la stringa in solo-ASCII (gli accentati noti vengono
+// convertiti, gli altri caratteri non-ASCII vengono scartati) e la tronca a max
+// caratteri. Usata per il campo "user" della riga NFC-RESULT verso l'ESP32.
+func asciiTruncate(s string, max int) string {
+	var sb strings.Builder
+	n := 0
+	for _, r := range s {
+		var repl string
+		switch {
+		case r < 0x80:
+			// ASCII stampabile passa così com'è; scarta i caratteri di controllo.
+			if r < 0x20 || r == 0x7f {
+				continue
+			}
+			repl = string(r)
+		default:
+			if t, ok := asciiTranslit[r]; ok {
+				repl = t
+			} else {
+				continue // non-ASCII non mappato: scartato
+			}
+		}
+		for _, c := range repl {
+			if n >= max {
+				return sb.String()
+			}
+			sb.WriteRune(c)
+			n++
+		}
+	}
+	return sb.String()
+}
+
 /*
 func localAddresses() {
 	ifaces, err := net.Interfaces()

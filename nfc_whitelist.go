@@ -195,15 +195,25 @@ func (m *NFCWhitelistManager) AbortEnroll() {
 
 // ── Gestori eventi seriale NFC ────────────────────────────────────────────────
 
+// NFCAccessResult è l'esito della valutazione di "EVT nfc <uid>" contro la
+// whitelist server. Status è uno di: "AUTH", "INACTIVE", "DENIED".
+type NFCAccessResult struct {
+	Authorized bool   // true solo per status AUTH → il portone va aperto
+	Status     string // "AUTH" | "INACTIVE" | "DENIED"
+	Name       string // nome utente; "" se DENIED
+}
+
 // HandleNFCEvent gestisce "EVT nfc <uid>".
 // Nel modello crypto-only l'ESP32 emette questo evento SOLO per tessere DESFire
 // che hanno superato l'auth AES a bordo: l'UID è quindi già crittograficamente
 // valido (cloni PLAIN e tessere di altri impianti non arrivano mai qui).
 //
-// Il server fa da "gate di autorizzazione": cerca l'UID nella whitelist e, se
-// presente e abilitato, aggiorna i contatori e ritorna true → il portone va
-// aperto. Ritorna false (e logga) se l'UID non è autorizzato o è disabilitato.
-func (m *NFCWhitelistManager) HandleNFCEvent(uid string) bool {
+// Il server fa da "gate di autorizzazione": cerca l'UID nella whitelist e
+// ritorna l'esito. Solo per status AUTH (presente e abilitato) aggiorna i
+// contatori e Authorized=true → il portone va aperto. Per gli altri casi logga
+// e ritorna Authorized=false con lo status appropriato (INACTIVE/DENIED), usato
+// dal chiamante per il banner NFC-RESULT sul display della scheda RFID.
+func (m *NFCWhitelistManager) HandleNFCEvent(uid string) NFCAccessResult {
 	uid = strings.ToUpper(uid)
 
 	m.mu.Lock()
@@ -218,18 +228,18 @@ func (m *NFCWhitelistManager) HandleNFCEvent(uid string) bool {
 
 	if !ok {
 		log.Printf("[NFC] tessera valida ma NON autorizzata: uid=%s — portone non aperto", uid)
-		return false
+		return NFCAccessResult{Status: "DENIED"}
 	}
 	if entry.Disabled {
 		log.Printf("[NFC] ACCESSO NEGATO: uid=%s nome=%q disabilitato — portone non aperto", uid, entry.Name)
-		return false
+		return NFCAccessResult{Status: "INACTIVE", Name: entry.Name}
 	}
 
 	log.Printf("[NFC] accesso autorizzato: uid=%s nome=%q count=%d", uid, entry.Name, entry.AccessCount)
 	if err := m.save(); err != nil {
 		log.Printf("[NFC] errore salvataggio access_count: %v", err)
 	}
-	return true
+	return NFCAccessResult{Authorized: true, Status: "AUTH", Name: entry.Name}
 }
 
 // HandleTagInfo gestisce "TAG-INFO <uid> <type>" — inviato dall'ESP32 appena rileva il tag.

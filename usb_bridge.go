@@ -2,6 +2,7 @@ package doorphoneserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -675,7 +676,10 @@ func (b *USBBridge) parseAndSendGPIO(line string) {
 		if b.nfcMgr != nil {
 			// EVT nfc arriva solo per tessere DESFire crittograficamente valide.
 			// Il server decide l'apertura in base alla whitelist.
-			if b.nfcMgr.HandleNFCEvent(uid) && b.OnDoorUnlock != nil {
+			res := b.nfcMgr.HandleNFCEvent(uid)
+			// Banner d'esito sul display: aggiuntivo, sulla stessa seriale RFID.
+			b.sendNFCResult(uid, res)
+			if res.Authorized && b.OnDoorUnlock != nil {
 				b.OnDoorUnlock()
 			}
 		}
@@ -698,6 +702,52 @@ func (b *USBBridge) parseAndSendGPIO(line string) {
 	default:
 		log.Printf("[USB] warn: GPIO channel pieno, EVT scartato: %+v", evt)
 	}
+}
+
+// nfcResultMaxLine è il limite di lunghezza della riga NFC-RESULT (incluso \n):
+// l'ESP32 scarta le righe ≥ 128 byte, qui si resta ben sotto i 120 byte.
+const nfcResultMaxLine = 120
+
+// sendNFCResult invia all'ESP32 — sulla stessa seriale RFID da cui è arrivato
+// "EVT nfc <uid>" — una riga "NFC-RESULT {json}" che pilota il banner d'esito
+// sul display della scheda. È AGGIUNTIVO: l'apertura porta resta gestita da
+// OnDoorUnlock e non dipende da questo invio.
+//
+// Formato (tassativo): una sola riga terminata da \n, < 120 byte, JSON valido
+// su riga singola con le 3 chiavi uid/user/status sempre presenti. uid è
+// rispedito identico; user è troncato a 20 caratteri ASCII (gli accentati
+// vengono traslitterati, es. "Niccolò" → "Niccolo"); status ∈ {AUTH,INACTIVE,DENIED}.
+func (b *USBBridge) sendNFCResult(uid string, res NFCAccessResult) {
+	payload := struct {
+		UID    string `json:"uid"`
+		User   string `json:"user"`
+		Status string `json:"status"`
+	}{
+		UID:    uid,
+		User:   asciiTruncate(res.Name, 20),
+		Status: res.Status,
+	}
+
+	// Encoder con SetEscapeHTML(false): evita di gonfiare la riga con sequenze
+	// < per <, >, & (resterebbe valida ma più lunga). json gestisce già
+	// l'escape di " e \. SetEscapeHTML non tocca la validità del JSON.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(payload); err != nil {
+		log.Printf("[USB] NFC-RESULT: errore marshal JSON: %v", err)
+		return
+	}
+	// Encode aggiunge un \n finale: rimuovilo, la riga è una sola.
+	jsonStr := strings.TrimRight(buf.String(), "\n")
+
+	line := "NFC-RESULT " + jsonStr + "\n"
+	if len(line) >= nfcResultMaxLine {
+		// Difensivo: con user ≤ 20 char ASCII non dovrebbe mai accadere.
+		log.Printf("[USB] NFC-RESULT troppo lunga (%d byte), scartata: %q", len(line), line)
+		return
+	}
+	b.Send(line)
 }
 
 // parseTagEnrolled processa "TAG-ENROLLED <uid> <PLAIN|DESFIRE>"
